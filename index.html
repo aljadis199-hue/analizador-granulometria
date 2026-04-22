@@ -931,7 +931,7 @@ async function generateReport() {
   // ── Capturar los 3 gráficos renderizando en el div principal ──
   const CW=820, CH=310;
   let imgHist=null, imgQ3=null, imgq3=null;
-  try{ plotHistograma([sel[0]]); await new Promise(r=>setTimeout(r,250));
+  try{ plotHistograma(sel); await new Promise(r=>setTimeout(r,250));
     imgHist=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
   try{ plotQ3Comparison(sel); await new Promise(r=>setTimeout(r,250));
     imgQ3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}

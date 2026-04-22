@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analizador de Distribución Granulométrica — Laboratorios Argos</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:    #101B46;
+  --lime:    #C2D500;
+  --teal:    #00B580;
+  --muted:   #4A5568;
+  --red:     #E53E3E;
+  --yellow:  #D69E2E;
+  --blue:    #3182CE;
+  --purple:  #6B46C1;
+  --bg:      #F5F6F7;
+  --card:    #FFFFFF;
+  --border:  #E2E8F0;
+  --shadow:  0 2px 8px rgba(16,27,70,0.08);
+  --radius:  8px;
+  --display: 'Barlow Condensed', sans-serif;
+  --body:    'Barlow', sans-serif;
+  /* alias para compatibilidad con código existente */
+  --argos-navy:#101B46;
+  --argos-gold:#C2D500;
+  --panel-bg:#FFFFFF;
+  --page-bg:#F5F6F7;
+  --text-main:#101B46;
+  --text-muted:#4A5568;
+  --text-light:#718096;
+  --green:#00B580;
+  --red:#E53E3E;
+}
+body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:flex;flex-direction:column;overflow:hidden;color:var(--navy)}
+
+/* ─── Loading overlay ─── */
+#loading-overlay{display:none;position:fixed;inset:0;background:rgba(16,27,70,.82);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+#loading-overlay.active{display:flex}
+.spinner{width:48px;height:48px;border:4px solid rgba(194,213,0,.3);border-top:4px solid var(--lime);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-msg{color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;letter-spacing:.5px}
+#loading-sub{color:rgba(255,255,255,.55);font-size:11px}
+
+/* ─── Toast ─── */
+#toast{display:none;position:fixed;bottom:52px;right:20px;background:var(--navy);color:#fff;padding:10px 18px;border-radius:var(--radius);font-size:12px;font-family:'Barlow',sans-serif;z-index:8888;box-shadow:var(--shadow);border-left:4px solid var(--lime);max-width:320px}
+
+/* ─── Header ─── */
+#header{background:var(--navy);color:#fff;padding:0 24px;height:58px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:0 2px 12px rgba(16,27,70,.3)}
+#header-left{display:flex;align-items:center;gap:16px}
+#argos-badge{background:var(--lime);color:var(--navy);font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;padding:4px 11px;border-radius:4px;letter-spacing:2px}
+#header-titles h1{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:800;letter-spacing:.8px;line-height:1.2}
+#header-titles h1 span{color:var(--lime)}
+#header-titles p{font-size:10px;color:rgba(255,255,255,.6);margin-top:2px;font-family:'Barlow',sans-serif;letter-spacing:.3px}
+#header-right{display:flex;align-items:center;gap:8px}
+.header-badge{background:rgba(255,255,255,.08);font-size:10px;padding:4px 10px;border-radius:12px;color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.15);font-family:'Barlow Condensed',sans-serif;font-weight:600;letter-spacing:.5px}
+
+/* ─── Loader bar ─── */
+#loader-bar{background:var(--card);padding:6px 18px;display:flex;align-items:center;gap:8px;border-bottom:2px solid var(--lime);flex-shrink:0;box-shadow:var(--shadow)}
+.lbtn{border:none;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.5px;cursor:pointer;border-radius:5px;display:flex;align-items:center;gap:5px;transition:opacity .15s}
+.lbtn:hover{opacity:.88}
+.lbtn-primary{background:var(--navy);color:#fff}
+.lbtn-sec{background:var(--muted);color:#fff}
+.lbtn-gold{background:var(--lime);color:var(--navy)}
+.lbtn-danger{background:var(--red);color:#fff}
+#status-text{font-size:11px;color:var(--muted);flex:1;font-family:'Barlow',sans-serif}
+#pdf-count-badge{background:#F0FFF9;color:var(--teal);border:1px solid var(--teal);font-size:10px;padding:3px 10px;border-radius:12px;font-weight:700;display:none;font-family:'Barlow Condensed',sans-serif}
+
+/* ─── Main layout ─── */
+#main{display:flex;flex:1;overflow:hidden;gap:7px;padding:7px 8px 5px}
+
+/* ─── Left panel ─── */
+#control-panel{width:272px;flex-shrink:0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow)}
+.panel-title{background:var(--navy);color:#fff;padding:9px 14px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center}
+.panel-pill{background:var(--lime);color:var(--navy);font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:800;padding:2px 8px;border-radius:10px;letter-spacing:.5px}
+#list-section{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:8px;gap:5px;min-height:0}
+#list-header{display:flex;justify-content:space-between;align-items:center}
+#list-label{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;color:var(--navy);letter-spacing:.4px}
+#sel-row{display:flex;gap:4px}
+.sbtn{font-family:'Barlow Condensed',sans-serif;font-size:10px;color:var(--navy);background:#F0FFF9;border:1px solid var(--teal);padding:2px 8px;cursor:pointer;border-radius:3px;font-weight:700;letter-spacing:.3px}
+.sbtn:hover{background:#CCFFF1}
+#measurementList{flex:1;border:1px solid var(--border);border-radius:5px;overflow-y:auto;background:#FAFBFC;min-height:0}
+.meas-item{padding:6px 9px;cursor:pointer;border-bottom:1px solid #F8FAFC;user-select:none;transition:background .1s}
+.meas-item:hover{background:#F0FFF9}
+.meas-item.selected{background:var(--navy);color:#fff}
+.meas-item .mi-date{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.2px}
+.meas-item .mi-name{font-size:10px;opacity:.8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meas-item .mi-comment{font-size:9px;opacity:.6;font-style:italic}
+.meas-item .mi-tag{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:8px;background:rgba(194,213,0,.3);color:#4A5568;padding:0 6px;border-radius:8px;margin-top:2px;font-weight:700;letter-spacing:.3px}
+.meas-item.selected .mi-tag{background:rgba(194,213,0,.35);color:var(--lime)}
+
+/* Meta card */
+#meta-card{padding:9px 10px;border-top:3px solid var(--teal);font-size:10px;color:var(--muted);flex-shrink:0}
+#meta-title{font-family:'Barlow Condensed',sans-serif;font-weight:800;color:var(--navy);margin-bottom:5px;font-size:11px;letter-spacing:.5px;display:flex;align-items:center;gap:5px}
+.meta-row{display:flex;gap:4px;margin-bottom:2px;align-items:flex-start;font-size:10px}
+.meta-lbl{font-weight:600;color:var(--navy);min-width:76px;flex-shrink:0}
+.meta-val{color:var(--navy)}
+.obsc-ok{color:var(--teal);font-weight:700}
+.obsc-warn{color:var(--yellow);font-weight:700}
+.obsc-bad{color:var(--red);font-weight:700}
+
+/* Buttons */
+#buttons{padding:8px;display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--border);flex-shrink:0}
+.chart-btn{border:none;color:#fff;padding:8px 12px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.4px;cursor:pointer;border-radius:5px;text-align:left;display:flex;align-items:center;gap:7px;transition:filter .15s}
+.chart-btn:hover{filter:brightness(1.12)}
+.btn-divider{height:1px;background:var(--border);margin:2px 0}
+
+/* ─── Right area ─── */
+#right-area{flex:1;display:flex;flex-direction:column;gap:7px;overflow:hidden;min-width:0}
+#chart-area{flex:1;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+#chart-title-bar{background:#F8F9FA;border-bottom:1px solid var(--border);padding:6px 16px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:8px}
+#chart-label{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:var(--navy);letter-spacing:.3px}
+#chart-meta-right{display:flex;gap:8px;align-items:center}
+.chart-badge{background:#F0FFF9;color:var(--teal);border:1px solid var(--teal);font-family:'Barlow Condensed',sans-serif;font-size:9px;padding:2px 8px;border-radius:10px;font-weight:700;letter-spacing:.3px}
+#chart{flex:1;min-height:0}
+.empty-chart{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;flex-direction:column;gap:6px;letter-spacing:.3px}
+
+/* ─── Stats panel ─── */
+#stats-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);flex-shrink:0;overflow:hidden;box-shadow:var(--shadow)}
+#stats-toggle{background:var(--navy);color:#fff;padding:7px 16px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;letter-spacing:.6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none}
+#stats-toggle:hover{filter:brightness(1.1)}
+#stats-arrow{transition:transform .2s;font-size:9px;color:var(--lime)}
+#stats-arrow.open{transform:rotate(180deg)}
+#stats-content{max-height:0;overflow:hidden;transition:max-height .3s ease}
+#stats-content.open{max-height:180px}
+#stats-inner{padding:8px 10px;overflow-x:auto}
+.stats-table{width:100%;border-collapse:collapse;font-size:10px;min-width:500px}
+.stats-table th{background:var(--navy);color:#fff;padding:5px 8px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;white-space:nowrap;letter-spacing:.3px}
+.stats-table th:first-child{text-align:left}
+.stats-table td{padding:4px 8px;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap;font-family:'Barlow',sans-serif;font-size:10px}
+.stats-table td:first-child{text-align:left;font-family:'Barlow Condensed',sans-serif;font-weight:700;color:var(--navy)}
+.stats-table tr:nth-child(even) td{background:#F5F6F7}
+.stats-table tr:hover td{background:#F0FFF9}
+.semaforo{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.s-green{background:var(--teal)}
+.s-yellow{background:var(--yellow)}
+.s-red{background:var(--red)}
+
+/* ─── Footer ─── */
+#footer{background:var(--navy);color:rgba(255,255,255,.65);font-family:'Barlow',sans-serif;font-size:10px;padding:4px 18px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;border-top:2px solid var(--lime)}
+#footer-left{display:flex;align-items:center;gap:8px}
+.footer-dot{color:var(--lime)}
+#footer-right{color:rgba(255,255,255,.45);font-size:9px;font-family:'Barlow Condensed',sans-serif;letter-spacing:.3px}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div id="loading-msg">Procesando archivos PDF…</div>
+  <div id="loading-sub">Por favor espere</div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<!-- Header -->
+<div id="header">
+  <div id="header-left">
+    <div id="argos-badge">ARGOS</div>
+    <div id="header-titles">
+      <h1>ANALIZADOR DE DISTRIBUCIÓN <span>GRANULOMÉTRICA</span></h1>
+      <p>Laboratorios Argos · Malvern Mastersizer · ISO 13320</p>
+    </div>
+  </div>
+  <div id="header-right">
+    <span class="header-badge">Q3 / q3</span>
+    <span class="header-badge">D10 · D50 · D90</span>
+    <span class="header-badge" id="header-date"></span>
+  </div>
+</div>
+
+<!-- Loader bar -->
+<div id="loader-bar">
+  <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" style="display:none">
+  <input type="file" id="fileInput" multiple accept=".pdf" style="display:none">
+  <button class="lbtn lbtn-primary" onclick="document.getElementById('folderInput').click()">📂 Abrir carpeta</button>
+  <button class="lbtn lbtn-sec"     onclick="document.getElementById('fileInput').click()">📄 Seleccionar PDFs</button>
+  <span id="pdf-count-badge"></span>
+  <span id="status-text">Sin datos cargados — abre una carpeta con reportes Malvern en PDF</span>
+  <button class="lbtn lbtn-gold"   onclick="generateReport()" title="Generar reporte PDF de las mediciones seleccionadas">📋 Generar reporte PDF</button>
+  <button class="lbtn lbtn-sec"    onclick="exportCSV()"      title="Exportar datos Q3 como CSV">⬇ Exportar CSV</button>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <!-- Left panel -->
+  <div id="control-panel">
+    <div class="panel-title">
+      PANEL DE CONTROL
+      <span class="panel-pill" id="meas-count-pill">0 mediciones</span>
+    </div>
+
+    <div id="list-section">
+      <div id="list-header">
+        <div id="list-label">Mediciones disponibles:</div>
+        <div id="sel-row">
+          <button class="sbtn" onclick="selectAll()">Todas</button>
+          <button class="sbtn" onclick="clearSelection()">Ninguna</button>
+        </div>
+      </div>
+      <div id="measurementList">
+        <div class="empty-chart" style="padding:20px;text-align:center;gap:4px">
+          Carga una carpeta con reportes PDF Malvern
+        </div>
+      </div>
+    </div>
+
+    <div id="meta-card">
+      <div id="meta-title">📌 Detalle de selección</div>
+      <div id="meta-content" style="color:var(--text-light);font-size:10px">
+        Selecciona una medición para ver sus detalles
+      </div>
+    </div>
+
+    <div id="buttons">
+      <button class="chart-btn" style="background:var(--navy);border-left:3px solid var(--lime)" onclick="doHistograma()">▦ Histograma + acumulada</button>
+      <button class="chart-btn" style="background:var(--teal)" onclick="doQ3()">↑ Comparar Q3</button>
+      <button class="chart-btn" style="background:var(--blue)" onclick="doq3()">↗ Comparar q3 (densidad)</button>
+      <button class="chart-btn" style="background:var(--yellow)" onclick="doHistorico()">◷ Histórico ~3–~30 µm</button>
+      <div class="btn-divider"></div>
+      <button class="chart-btn" style="background:var(--purple)" onclick="doD50Historico()">◈ Histórico D10·D50·D90</button>
+    </div>
+  </div>
+
+  <!-- Right area: chart + stats -->
+  <div id="right-area">
+    <div id="chart-area">
+      <div id="chart-title-bar">
+        <span id="chart-label">Selecciona mediciones y un tipo de gráfico</span>
+        <div id="chart-meta-right">
+          <span class="chart-badge" id="chart-count" style="display:none"></span>
+        </div>
+      </div>
+      <div id="chart">
+        <div class="empty-chart">
+          <div>Carga archivos PDF y selecciona mediciones</div>
+          <div style="font-size:11px;color:var(--muted);font-family:'Barlow',sans-serif;font-weight:400">Malvern Mastersizer · ISO 13320</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats panel -->
+    <div id="stats-panel">
+      <div id="stats-toggle" onclick="toggleStats()">
+        <span>📐 PARÁMETROS GRANULOMÉTRICOS — <span id="stats-summary" style="font-weight:400;opacity:.8">Selecciona mediciones para ver parámetros</span></span>
+        <span id="stats-arrow">▲</span>
+      </div>
+      <div id="stats-content" class="open">
+        <div id="stats-inner">
+          <div style="font-size:10px;color:var(--text-light);padding:6px 4px">Los parámetros D10, D50, D90, Span y Q3 en mallas estándar se calcularán automáticamente al seleccionar mediciones.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div id="footer">
+  <div id="footer-left">
+    <span>🏭 Desarrollado por la <strong style="color:#fff">Célula de Manufactura Digital</strong></span>
+    <span class="footer-dot">·</span>
+    <span>Laboratorios Argos</span>
+    <span class="footer-dot">·</span>
+    <span>ISO 13320 · Malvern Mastersizer</span>
+  </div>
+  <div id="footer-right">© 2026 Argos — Todos los derechos reservados</div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<!-- Dependencies                                               -->
+<!-- ─────────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+'use strict';
+
+// ────────────────────────────────────────────────────────────
+// CONFIG
+// ────────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+const COLORS = ['#101B46','#00B580','#3182CE','#D69E2E','#6B46C1','#E53E3E','#4A5568','#C2D500','#0E7490','#4338CA'];
+const AZUL   = '#101B46';
+const X_LO   = 2.91;   // fallback si no existe 3.0
+const X_HI   = 31.9;   // fallback si no existe 30.0
+const PLOTLY_CFG = {responsive:true, displayModeBar:true, displaylogo:false,
+                    modeBarButtonsToRemove:['lasso2d','select2d'],
+                    toImageButtonOptions:{filename:'Granulometria_Argos', format:'png', scale:2}};
+
+// ────────────────────────────────────────────────────────────
+// STATE
+// ────────────────────────────────────────────────────────────
+let measurements  = [];
+let selectedSet   = new Set();
+let statsOpen     = true;
+let lastChartType = null;
+
+// ────────────────────────────────────────────────────────────
+// UTILIDADES
+// ────────────────────────────────────────────────────────────
+function hexToRgba(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function parseDT(s) { try{ return new Date(s); }catch{ return new Date(0); } }
+function fmtDT(s) {
+  if (!s) return {date:'—', time:''};
+  const sp = s.indexOf(' ');
+  return sp === -1 ? {date:s, time:''} : {date:s.slice(0,sp), time:s.slice(sp+1)};
+}
+function showToast(msg, ms=3500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.display='none', ms);
+}
+function setStatus(msg) { document.getElementById('status-text').textContent = msg; }
+function setLoadingMsg(a, b='') { document.getElementById('loading-msg').textContent=a; document.getElementById('loading-sub').textContent=b; }
+function showOverlay(v)  { document.getElementById('loading-overlay').classList.toggle('active',v); }
+function setChartLabel(lbl, n) {
+  document.getElementById('chart-label').textContent = lbl;
+  const cb = document.getElementById('chart-count');
+  if (n != null) { cb.textContent = `${n} medición${n!==1?'es':''}`; cb.style.display=''; }
+  else cb.style.display='none';
+}
+
+// ────────────────────────────────────────────────────────────
+// PDF PARSER
+// ────────────────────────────────────────────────────────────
+const PAIR_RE = /([\d]+(?:[.,][\d]+)?)\s*[µμ]m\s+([\d]+(?:[.,][\d]+)?)\s*%/g;
+
+function extractPairs(line) {
+  const out=[]; PAIR_RE.lastIndex=0; let m;
+  while((m=PAIR_RE.exec(line))!==null) {
+    const x=parseFloat(m[1].replace(',','.')), y=parseFloat(m[2].replace(',','.'));
+    if(!isNaN(x)&&!isNaN(y)) out.push({x,y});
+  }
+  return out;
+}
+
+function groupIntoLines(items) {
+  if(!items||!items.length) return [];
+  const sorted=[...items].sort((a,b)=>a.y!==b.y?a.y-b.y:a.x-b.x);
+  const groups=[];
+  for(const item of sorted){
+    if(!item.str.trim()) continue;
+    let placed=false;
+    for(const g of groups){
+      if(Math.abs(g.y-item.y)<=6){ g.items.push(item); g.y=g.items.reduce((s,i)=>s+i.y,0)/g.items.length; placed=true; break; }
+    }
+    if(!placed) groups.push({y:item.y, items:[item]});
+  }
+  groups.sort((a,b)=>a.y-b.y);
+  return groups.map(g=>{
+    g.items.sort((a,b)=>a.x-b.x);
+    return g.items.map(i=>i.str.trim()).filter(Boolean).join(' ');
+  }).filter(l=>l.length>0);
+}
+
+function extractMetadata(lines) {
+  const meta={measurementName:'',user:'',datetime:'',comment:'',obscuration:NaN};
+  function between(text,a,b){
+    const ia=text.indexOf(a); if(ia===-1) return null;
+    const start=ia+a.length, ib=b?text.indexOf(b,start):-1;
+    const raw=(ib===-1?text.slice(start):text.slice(start,ib)).trim();
+    return(raw==='-'||raw==='')? '':raw;
+  }
+  for(const line of lines){
+    if(line.includes('Nombre de la medición')&&!meta.measurementName){
+      const v=between(line,'Nombre de la medición','Nombre del método'); if(v!==null) meta.measurementName=v;
+    }
+    if(line.includes('Usuario')&&!meta.user){
+      const v=between(line,'Usuario','Hora de inicio'); if(v!==null) meta.user=v;
+    }
+    if(line.includes('Hora de inicio')&&!meta.datetime){
+      let v=between(line,'Hora de inicio','Estado');
+      if(!v) v=between(line,'Hora de inicio','ID de');
+      if(!v) v=between(line,'Hora de inicio',null);
+      if(v!==null) meta.datetime=v;
+    }
+    if(line.includes('Comentario')&&!meta.comment){
+      const v=between(line,'Comentario',null); if(v!==null) meta.comment=v;
+    }
+    if((line.includes('Obscuración promedio')||line.includes('Obscuraci'))&&isNaN(meta.obscuration)){
+      const m2=line.match(/Obscuraci[oó]n promedio\s+([\d]+(?:[.,][\d]+)?)\s*%/i);
+      if(m2) meta.obscuration=parseFloat(m2[1].replace(',','.'));
+    }
+  }
+  return meta;
+}
+
+function extractTableData(lines) {
+  const Q3=[],q3=[];
+  const S={INIT:0,Q3:1,q3:2}; let state=S.INIT;
+  for(const line of lines){
+    switch(state){
+      case S.INIT:
+        if(line.includes('Tamaño inferior')&&line.includes('Diámetro')) state=S.Q3;
+        break;
+      case S.Q3:
+        if(line.includes('Distribución')&&line.includes('Diámetro')){state=S.q3;break;}
+        if(line.includes('Tamaño inferior')) break;
+        for(const p of extractPairs(line)) Q3.push(p);
+        break;
+      case S.q3:
+        if(line.includes('Distribución')&&line.includes('Diámetro')) break;
+        for(const p of extractPairs(line)) q3.push(p);
+        break;
+    }
+  }
+  const byX=(a,b)=>a.x-b.x;
+  Q3.sort(byX); q3.sort(byX);
+  return{Q3,q3};
+}
+
+async function parsePDF(file) {
+  const ab=await file.arrayBuffer();
+  const pdfDoc=await pdfjsLib.getDocument({data:ab}).promise;
+  const allItems=[]; let cumH=0;
+  for(let p=1;p<=pdfDoc.numPages;p++){
+    const page=await pdfDoc.getPage(p);
+    const vp=page.getViewport({scale:1});
+    const tc=await page.getTextContent();
+    for(const item of tc.items){
+      const absY=cumH+(vp.height-item.transform[5]);
+      if(item.str&&item.str.trim()) allItems.push({str:item.str,x:item.transform[4],y:absY});
+    }
+    cumH+=vp.height;
+  }
+  const lines=groupIntoLines(allItems);
+  const meta=extractMetadata(lines);
+  const{Q3,q3}=extractTableData(lines);
+  return{...meta,filename:file.name,Q3,q3};
+}
+
+// ────────────────────────────────────────────────────────────
+// HELPERS DE DATOS
+// ────────────────────────────────────────────────────────────
+function getValueAtDiameter(data, target) {
+  if(!data||!data.length) return 0;
+  if(target<=data[0].x) return data[0].y;
+  if(target>=data[data.length-1].x) return data[data.length-1].y;
+  for(let i=0;i<data.length-1;i++){
+    const x0=data[i].x,x1=data[i+1].x;
+    if(target>=x0&&target<=x1){
+      const t=(target-x0)/(x1-x0);
+      return data[i].y+t*(data[i+1].y-data[i].y);
+    }
+  }
+  return 0;
+}
+
+function getDPercentile(Q3data, pct) {
+  if(!Q3data||!Q3data.length) return 0;
+  for(let i=0;i<Q3data.length-1;i++){
+    if(Q3data[i].y<=pct&&Q3data[i+1].y>=pct){
+      const t=(pct-Q3data[i].y)/(Q3data[i+1].y-Q3data[i].y);
+      return Q3data[i].x+t*(Q3data[i+1].x-Q3data[i].x);
+    }
+  }
+  return Q3data[Q3data.length-1].y<pct ? Q3data[Q3data.length-1].x : Q3data[0].x;
+}
+
+function calcTrapezoidArea(data, xMin, xMax) {
+  if(!data||!data.length) return 0;
+  const pts=[{x:xMin,y:getValueAtDiameter(data,xMin)}];
+  for(const d of data) if(d.x>xMin&&d.x<xMax) pts.push({x:d.x,y:d.y});
+  pts.push({x:xMax,y:getValueAtDiameter(data,xMax)});
+  pts.sort((a,b)=>a.x-b.x);
+  let area=0;
+  for(let i=0;i<pts.length-1;i++) area+=(pts[i+1].x-pts[i].x)*(pts[i].y+pts[i+1].y)/2;
+  return area;
+}
+
+// Prefiere 45.0, luego 45.5; si ninguno existe interpola en 45
+function resolveQ3at45(Q3data) {
+  const TOL=0.02;
+  const has45 =Q3data.some(d=>Math.abs(d.x-45.0)<TOL);
+  const has455=Q3data.some(d=>Math.abs(d.x-45.5)<TOL);
+  const target=has45?45.0:(has455?45.5:45.0);
+  const label =has45?'45':(has455?'45.5':'45');
+  return{value:getValueAtDiameter(Q3data,target),label};
+}
+
+// Prefiere 3.0/30.0; si no existen usa 2.91/31.9
+function resolveBounds(data) {
+  const TOL=0.02;
+  const lo=data.some(d=>Math.abs(d.x-3.0)<TOL)?3.0:X_LO;
+  const hi=data.some(d=>Math.abs(d.x-30.0)<TOL)?30.0:X_HI;
+  return{lo,hi};
+}
+
+function calcStats(m) {
+  const d10=getDPercentile(m.Q3,10);
+  const d50=getDPercentile(m.Q3,50);
+  const d90=getDPercentile(m.Q3,90);
+  const span=d50>0?(d90-d10)/d50:0;
+  const{lo,hi}=resolveBounds(m.Q3);
+  const diff=Math.abs(getValueAtDiameter(m.Q3,hi)-getValueAtDiameter(m.Q3,lo));
+  const{value:q45val,label:q45lbl}=resolveQ3at45(m.Q3);
+  return{d10,d50,d90,span,diff,q45val,q45lbl,lo,hi};
+}
+
+// ────────────────────────────────────────────────────────────
+// CONFIGURACIÓN DE EJES (reutilizable)
+// ────────────────────────────────────────────────────────────
+const xAxisCfg={
+  type:'log',
+  range:[Math.log10(0.1),Math.log10(3500)],
+  tickvals:[0.1,1,10,100,1000,3000],
+  ticktext:['0.1','1','10','100','1000','3000'],
+  title:{text:'Diámetro de partícula (µm)',font:{size:12,color:AZUL}},
+  gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true,linecolor:'#CBD5E1',linewidth:1
+};
+const baseLayout={
+  paper_bgcolor:'#FFFFFF',plot_bgcolor:'#F5F6F7',
+  font:{family:'Barlow, sans-serif',color:'#101B46'},
+  legend:{bgcolor:'rgba(255,255,255,0.95)',bordercolor:'#E2E8F0',borderwidth:1,font:{size:10,family:'Barlow, sans-serif'}},
+  margin:{t:52,b:60,l:70,r:50}
+};
+
+// ────────────────────────────────────────────────────────────
+// FUNCIONES DE GRÁFICO
+// ────────────────────────────────────────────────────────────
+function plotHistograma(idx) {
+  const m=measurements[idx], q3d=m.q3, Q3d=m.Q3;
+  const barWidths=q3d.map((d,i)=>i<q3d.length-1?q3d[i+1].x-d.x:d.x-q3d[i-1].x);
+  const st=calcStats(m);
+
+  const barTrace={
+    x:q3d.map(d=>d.x),y:q3d.map(d=>d.y),width:barWidths,
+    type:'bar',name:'q3 — densidad',
+    marker:{color:hexToRgba(AZUL,0.65)},
+    yaxis:'y',offset:0,
+    hovertemplate:'Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>'
+  };
+  const lineTrace={
+    x:Q3d.map(d=>d.x),y:Q3d.map(d=>d.y),
+    type:'scatter',mode:'lines+markers',name:'Q3 — acumulada',
+    line:{color:'#DC2626',width:2.5},marker:{size:4,color:'#DC2626'},
+    yaxis:'y2',hovertemplate:'Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>'
+  };
+
+  // Líneas verticales de referencia (D10, D50, D90)
+  const shapes=[
+    {type:'line',x0:st.d10,x1:st.d10,y0:0,y1:1,yref:'paper',line:{color:'rgba(100,116,139,0.5)',width:1.5,dash:'dot'}},
+    {type:'line',x0:st.d50,x1:st.d50,y0:0,y1:1,yref:'paper',line:{color:'rgba(11,45,107,0.6)',width:2,dash:'dash'}},
+    {type:'line',x0:st.d90,x1:st.d90,y0:0,y1:1,yref:'paper',line:{color:'rgba(100,116,139,0.5)',width:1.5,dash:'dot'}},
+  ];
+  const annotations=[
+    {x:Math.log10(st.d10),y:0.97,xref:'x',yref:'paper',text:'D10',showarrow:false,font:{size:9,color:'#64748B'},bgcolor:'rgba(255,255,255,0.7)'},
+    {x:Math.log10(st.d50),y:0.97,xref:'x',yref:'paper',text:`D50`,showarrow:false,font:{size:9,color:AZUL,weight:'bold'},bgcolor:'rgba(255,255,255,0.7)'},
+    {x:Math.log10(st.d90),y:0.97,xref:'x',yref:'paper',text:'D90',showarrow:false,font:{size:9,color:'#64748B'},bgcolor:'rgba(255,255,255,0.7)'},
+  ];
+
+  const layout={
+    ...baseLayout,
+    title:{text:`HISTOGRAMA + ACUMULADA — ${m.measurementName||m.filename}`,font:{size:12,color:AZUL},pad:{t:5}},
+    xaxis:xAxisCfg,
+    yaxis:{title:{text:'q3 (densidad)',font:{size:12,color:AZUL}},rangemode:'tozero',
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true},
+    yaxis2:{title:{text:'% acumulado bajo tamaño',font:{size:12,color:'#DC2626'}},
+            tickfont:{color:'#DC2626'},overlaying:'y',side:'right',range:[0,100],showgrid:false},
+    bargap:0,shapes,annotations,
+    legend:{...baseLayout.legend,x:0.01,y:0.99,xanchor:'left',yanchor:'top'},
+    margin:{t:52,b:60,l:70,r:85}
+  };
+  setChartLabel(`Histograma + Acumulada · ${m.datetime||m.filename}`,1);
+  lastChartType='histograma';
+  Plotly.newPlot('chart',[barTrace,lineTrace],layout,PLOTLY_CFG);
+  updateStatsPanel([idx]);
+}
+
+function plotQ3Comparison(indices) {
+  const traces=indices.map((idx,i)=>{
+    const m=measurements[idx], color=COLORS[i%COLORS.length];
+    const q45=resolveQ3at45(m.Q3);
+    const{date,time}=fmtDT(m.datetime);
+    return{
+      x:m.Q3.map(d=>d.x),y:m.Q3.map(d=>d.y),
+      type:'scatter',mode:'lines+markers',
+      name:`${date} ${time}<br>Q3@${q45.label}µm: ${q45.value.toFixed(1)}%`,
+      line:{color,width:2.5},marker:{size:4,color},
+      hovertemplate:`${m.measurementName||m.filename}<br>Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>`
+    };
+  });
+  const layout={
+    ...baseLayout,
+    title:{text:'COMPARACIÓN x vs Q3 (acumulada)',font:{size:12,color:AZUL},pad:{t:5}},
+    xaxis:xAxisCfg,
+    yaxis:{title:{text:'Q3 — % acumulado',font:{size:12,color:AZUL}},range:[0,100],
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true},
+    legend:{...baseLayout.legend,x:1.02,y:1,xanchor:'left',yanchor:'top'},
+    margin:{t:52,b:60,l:70,r:210}
+  };
+  setChartLabel('Comparación Q3',indices.length);
+  lastChartType='q3';
+  Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
+  updateStatsPanel(indices);
+}
+
+function plotq3Comparison(indices) {
+  const traces=[];
+  indices.forEach((idx,i)=>{
+    const m=measurements[idx], color=COLORS[i%COLORS.length];
+    const{lo,hi}=resolveBounds(m.Q3);
+    const area=calcTrapezoidArea(m.q3,lo,hi);
+    const diff=Math.abs(getValueAtDiameter(m.Q3,hi)-getValueAtDiameter(m.Q3,lo));
+    const{date,time}=fmtDT(m.datetime);
+
+    const fillPts=[{x:lo,y:getValueAtDiameter(m.q3,lo)}];
+    m.q3.filter(d=>d.x>lo&&d.x<hi).forEach(d=>fillPts.push({x:d.x,y:d.y}));
+    fillPts.push({x:hi,y:getValueAtDiameter(m.q3,hi)});
+    fillPts.sort((a,b)=>a.x-b.x);
+
+    traces.push({x:fillPts.map(d=>d.x),y:fillPts.map(d=>d.y),type:'scatter',mode:'none',
+      fill:'tozeroy',fillcolor:hexToRgba(color,0.18),showlegend:false,hoverinfo:'skip'});
+    traces.push({
+      x:m.q3.map(d=>d.x),y:m.q3.map(d=>d.y),type:'scatter',mode:'lines',
+      name:`${date} ${time}<br>Área ${lo}–${hi}µm: ${area.toFixed(2)}<br>|Q3(${hi})−Q3(${lo})|: ${diff.toFixed(2)}`,
+      line:{color,width:2.5},
+      hovertemplate:`${m.measurementName||m.filename}<br>Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>`
+    });
+  });
+  const layout={
+    ...baseLayout,
+    title:{text:'COMPARACIÓN x vs q3 (densidad)',font:{size:12,color:AZUL},pad:{t:5}},
+    xaxis:xAxisCfg,
+    yaxis:{title:{text:'q3 — densidad (%)',font:{size:12,color:AZUL}},rangemode:'tozero',
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true},
+    legend:{...baseLayout.legend,x:1.02,y:1,xanchor:'left',yanchor:'top'},
+    margin:{t:52,b:60,l:70,r:230}
+  };
+  setChartLabel('Comparación q3 (densidad)',indices.length);
+  lastChartType='q3_density';
+  Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
+  updateStatsPanel(indices);
+}
+
+function plotHistorico(indices) {
+  const sorted=[...indices].sort((a,b)=>parseDT(measurements[a].datetime)-parseDT(measurements[b].datetime));
+  const labels=[],yVals=[],hoverTxts=[];
+  for(const idx of sorted){
+    const m=measurements[idx];
+    const{lo,hi}=resolveBounds(m.Q3);
+    const diff=Math.abs(getValueAtDiameter(m.Q3,hi)-getValueAtDiameter(m.Q3,lo));
+    const{date,time}=fmtDT(m.datetime);
+    labels.push(`${date}<br>${time}`);
+    yVals.push(parseFloat(diff.toFixed(4)));
+    hoverTxts.push(`${m.measurementName||m.filename}<br>${m.datetime}<br>|Q3(${hi})−Q3(${lo})|: ${diff.toFixed(2)}%`);
+  }
+  // Línea de media
+  const mean=yVals.reduce((s,v)=>s+v,0)/yVals.length;
+  const meanLine={x:labels,y:yVals.map(()=>mean),type:'scatter',mode:'lines',name:`Media: ${mean.toFixed(2)}%`,
+    line:{color:'#F5A800',width:2,dash:'dash'},hoverinfo:'skip'};
+
+  const trace={
+    x:labels,y:yVals,type:'scatter',mode:'lines+markers',
+    name:'|Q3(~30) − Q3(~3)| (%)',
+    line:{color:AZUL,width:2.5},
+    marker:{symbol:'circle',size:11,color:'#DC2626',line:{color:AZUL,width:2}},
+    hovertemplate:hoverTxts.map(t=>`${t}<extra></extra>`)
+  };
+  const annotations=yVals.map((v,i)=>({
+    x:labels[i],y:v,text:`<b>${v.toFixed(2)}</b>`,
+    showarrow:false,yanchor:'bottom',yshift:9,font:{size:10,color:AZUL}
+  }));
+  const layout={
+    ...baseLayout,
+    title:{text:'HISTÓRICO |Q3(~30µm) − Q3(~3µm)|',font:{size:12,color:AZUL},pad:{t:5}},
+    xaxis:{type:'category',title:{text:'Medición (Fecha / Hora)',font:{size:12,color:AZUL}},
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true,tickangle:-20},
+    yaxis:{title:{text:'|Q3(~30) − Q3(~3)| (%)',font:{size:12,color:AZUL}},rangemode:'tozero',
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true},
+    annotations,margin:{t:52,b:90,l:80,r:40}
+  };
+  setChartLabel('Histórico |Q3(~30) − Q3(~3)|',sorted.length);
+  lastChartType='historico';
+  Plotly.newPlot('chart',[trace,meanLine],layout,PLOTLY_CFG);
+  updateStatsPanel(indices);
+}
+
+function doD50Historico() {
+  const sel=getSelected();
+  if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
+  const sorted=[...sel].sort((a,b)=>parseDT(measurements[a].datetime)-parseDT(measurements[b].datetime));
+  const labels=[],d50s=[],d10s=[],d90s=[],spans=[];
+  for(const idx of sorted){
+    const m=measurements[idx], st=calcStats(m);
+    const{date,time}=fmtDT(m.datetime);
+    labels.push(`${date}<br>${time}`);
+    d50s.push(parseFloat(st.d50.toFixed(2)));
+    d10s.push(parseFloat(st.d10.toFixed(2)));
+    d90s.push(parseFloat(st.d90.toFixed(2)));
+    spans.push(parseFloat(st.span.toFixed(3)));
+  }
+  const mean50=d50s.reduce((s,v)=>s+v,0)/d50s.length;
+  const traces=[
+    {x:labels,y:d90s,type:'scatter',mode:'lines+markers',name:'D90',
+     line:{color:'#EA580C',width:1.5,dash:'dot'},marker:{size:7,color:'#EA580C'},yaxis:'y'},
+    {x:labels,y:d50s,type:'scatter',mode:'lines+markers',name:'D50',
+     line:{color:AZUL,width:2.5},marker:{symbol:'circle',size:10,color:'#DC2626',line:{color:AZUL,width:2}},yaxis:'y'},
+    {x:labels,y:d10s,type:'scatter',mode:'lines+markers',name:'D10',
+     line:{color:'#059669',width:1.5,dash:'dot'},marker:{size:7,color:'#059669'},yaxis:'y'},
+    {x:labels,y:labels.map(()=>mean50),type:'scatter',mode:'lines',name:`Media D50: ${mean50.toFixed(2)} µm`,
+     line:{color:'#F5A800',width:2,dash:'dash'},yaxis:'y',hoverinfo:'skip'},
+    {x:labels,y:spans,type:'scatter',mode:'lines+markers',name:'Span',
+     line:{color:'#7C3AED',width:1.5},marker:{size:6,color:'#7C3AED'},yaxis:'y2'},
+  ];
+  const annotations=d50s.map((v,i)=>({
+    x:labels[i],y:v,text:`<b>${v.toFixed(1)}</b>`,
+    showarrow:false,yanchor:'bottom',yshift:9,font:{size:9,color:AZUL}
+  }));
+  const layout={
+    ...baseLayout,
+    title:{text:'HISTÓRICO D10 · D50 · D90 · Span',font:{size:12,color:AZUL},pad:{t:5}},
+    xaxis:{type:'category',title:{text:'Medición',font:{size:12,color:AZUL}},
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true,tickangle:-20},
+    yaxis:{title:{text:'Diámetro (µm)',font:{size:12,color:AZUL}},rangemode:'tozero',
+           gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true},
+    yaxis2:{title:{text:'Span',font:{size:12,color:'#7C3AED'}},
+            tickfont:{color:'#7C3AED'},overlaying:'y',side:'right',rangemode:'tozero',showgrid:false},
+    annotations,margin:{t:52,b:90,l:80,r:70}
+  };
+  setChartLabel('Histórico D10 · D50 · D90 · Span',sorted.length);
+  lastChartType='d50historico';
+  Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
+  updateStatsPanel(sel);
+}
+
+// ────────────────────────────────────────────────────────────
+// PANEL DE PARÁMETROS
+// ────────────────────────────────────────────────────────────
+function toggleStats() {
+  statsOpen=!statsOpen;
+  document.getElementById('stats-content').classList.toggle('open',statsOpen);
+  document.getElementById('stats-arrow').classList.toggle('open',statsOpen);
+}
+
+function semaforo(val, good, warn) {
+  if(val<=good) return '<span class="semaforo s-green"></span>';
+  if(val<=warn)  return '<span class="semaforo s-yellow"></span>';
+  return '<span class="semaforo s-red"></span>';
+}
+
+function updateStatsPanel(indices) {
+  const inner=document.getElementById('stats-inner');
+  const summary=document.getElementById('stats-summary');
+  if(!indices||!indices.length){ inner.innerHTML='<div style="font-size:10px;color:var(--text-light);padding:6px 4px">Selecciona mediciones para ver parámetros.</div>'; summary.textContent='Sin selección'; return; }
+
+  const rows=indices.map(idx=>{
+    const m=measurements[idx]; const st=calcStats(m);
+    const q10=getValueAtDiameter(m.Q3,10),q32=getValueAtDiameter(m.Q3,32),q63=getValueAtDiameter(m.Q3,63),q90=getValueAtDiameter(m.Q3,90);
+    const{date}=fmtDT(m.datetime);
+    return`<tr>
+      <td title="${m.datetime}">${date} · ${m.measurementName||m.filename}</td>
+      <td>${st.d10.toFixed(1)}</td>
+      <td><b>${st.d50.toFixed(1)}</b></td>
+      <td>${st.d90.toFixed(1)}</td>
+      <td>${st.span.toFixed(2)}</td>
+      <td>${q10.toFixed(1)}%</td>
+      <td>${q32.toFixed(1)}%</td>
+      <td>${semaforo(st.q45val,10,20)}${st.q45val.toFixed(1)}%</td>
+      <td>${q63.toFixed(1)}%</td>
+      <td>${q90.toFixed(1)}%</td>
+      <td>${semaforo(st.diff,30,45)}${st.diff.toFixed(2)}%</td>
+    </tr>`;
+  }).join('');
+
+  inner.innerHTML=`<table class="stats-table">
+    <thead><tr>
+      <th>Medición</th>
+      <th>D10 (µm)</th><th>D50 (µm)</th><th>D90 (µm)</th><th>Span</th>
+      <th>Q3@10</th><th>Q3@32</th><th>Q3@45/45.5</th><th>Q3@63</th><th>Q3@90</th>
+      <th>|ΔQ3| ~3–30</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+  summary.textContent=`${indices.length} medición${indices.length!==1?'es':''} seleccionada${indices.length!==1?'s':''}`;
+  if(!statsOpen) toggleStats();
+}
+
+// ────────────────────────────────────────────────────────────
+// GENERACIÓN DE REPORTE PDF
+// ────────────────────────────────────────────────────────────
+async function generateReport() {
+  const sel=getSelected();
+  if(!sel.length){showToast('⚠ Selecciona al menos una medición para generar el reporte.');return;}
+  showOverlay(true); setLoadingMsg('Generando reporte PDF…','Por favor espere');
+
+  let chartImg=null;
+  try{
+    const chartEl=document.getElementById('chart');
+    if(chartEl.querySelector('.js-plotly-plot'))
+      chartImg=await Plotly.toImage('chart',{format:'png',width:760,height:420,scale:1.5});
+  }catch(e){console.warn('Sin gráfico para capturar',e);}
+
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
+  const W=210, M=14;
+  const now=new Date().toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'});
+
+  function addHeader(pageNum){
+    // Franja azul principal
+    doc.setFillColor(11,45,107);
+    doc.rect(0,0,W,28,'F');
+    // Franja dorada
+    doc.setFillColor(245,168,0);
+    doc.rect(0,28,W,4,'F');
+    // Logo ARGOS
+    doc.setFillColor(245,168,0);
+    doc.roundedRect(M,5,18,16,2,2,'F');
+    doc.setTextColor(11,45,107);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.text('ARGOS',M+2,15.5);
+    // Título
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(12);
+    doc.text('ANALIZADOR DE DISTRIBUCIÓN GRANULOMÉTRICA',M+22,12);
+    doc.setFontSize(8);
+    doc.setFont('helvetica','normal');
+    doc.text('Laboratorios Argos · ISO 13320 · Malvern Mastersizer',M+22,19.5);
+    doc.setTextColor(11,45,107);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7);
+    doc.text(`Generado: ${now}`,W-M,26.5,{align:'right'});
+    if(pageNum>1){
+      doc.setTextColor(255,255,255);
+      doc.setFontSize(7);
+      doc.setFont('helvetica','normal');
+      doc.text(`Página ${pageNum}`,W-M,7,{align:'right'});
+    }
+  }
+
+  function addFooter(){
+    doc.setDrawColor(226,232,240);
+    doc.line(M,285,W-M,285);
+    doc.setFontSize(7);
+    doc.setFont('helvetica','normal');
+    doc.setTextColor(148,163,184);
+    doc.text('Desarrollado por la Célula de Manufactura Digital — Laboratorios Argos',M,290);
+    doc.text(`ISO 13320 · ${new Date().toLocaleDateString('es-CO')}`,W-M,290,{align:'right'});
+  }
+
+  // ── PÁGINA 1: tabla comparativa (si hay >1 medición) ─────
+  addHeader(1); addFooter();
+  let y=38;
+
+  // Sección: resumen
+  doc.setFillColor(11,45,107);
+  doc.rect(M,y,W-2*M,7,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(8.5);
+  doc.text('RESUMEN COMPARATIVO DE MEDICIONES',M+3,y+5);
+  y+=9;
+
+  // Cabecera tabla
+  const cols=[['Medición',42],['D10',15],['D50',15],['D90',15],['Span',14],['Q3@45',18],['|ΔQ3|',18],['Oscurec.',22]];
+  let xc=M;
+  doc.setFillColor(71,85,105);
+  doc.rect(M,y,W-2*M,7,'F');
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(7);
+  cols.forEach(([lbl,w])=>{
+    doc.text(lbl,xc+w/2,y+5,{align:'center'});
+    xc+=w;
+  });
+  y+=7;
+
+  sel.forEach((idx,ri)=>{
+    const m=measurements[idx]; const st=calcStats(m);
+    const{date,time}=fmtDT(m.datetime);
+    const bg=ri%2===0?[248,250,252]:[241,245,249];
+    doc.setFillColor(...bg);
+    doc.rect(M,y,W-2*M,8,'F');
+    doc.setTextColor(30,41,59);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    xc=M;
+    const vals=[
+      `${date} ${m.measurementName||m.filename}`.slice(0,32),
+      `${st.d10.toFixed(1)}µm`,`${st.d50.toFixed(1)}µm`,`${st.d90.toFixed(1)}µm`,
+      st.span.toFixed(2),`${st.q45val.toFixed(1)}%`,`${st.diff.toFixed(2)}%`,
+      isNaN(m.obscuration)?'—':`${m.obscuration.toFixed(1)}%`
+    ];
+    cols.forEach(([,w],i)=>{
+      doc.text(vals[i],xc+w/2,y+5.5,{align:'center'});
+      xc+=w;
+    });
+    y+=8;
+  });
+  y+=6;
+
+  // Insertar gráfico en página 1 si cabe
+  if(chartImg){
+    const imgH=Math.min((420/760)*(W-2*M), 285-y-10);
+    if(imgH>40){
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(8);
+      doc.setTextColor(11,45,107);
+      doc.text('GRÁFICO ACTIVO:',M,y+5);
+      doc.addImage(chartImg,'PNG',M,y+7,W-2*M,imgH);
+      y+=imgH+12;
+    }
+  }
+
+  // ── PÁGINAS INDIVIDUALES ──────────────────────────────────
+  sel.forEach((idx,pi)=>{
+    doc.addPage();
+    addHeader(pi+2); addFooter();
+    const m=measurements[idx]; const st=calcStats(m);
+    const{lo,hi}=resolveBounds(m.Q3);
+    let py=38;
+
+    // Info de medición
+    doc.setFillColor(248,250,252);
+    doc.roundedRect(M,py,W-2*M,34,2,2,'F');
+    doc.setDrawColor(226,232,240);
+    doc.roundedRect(M,py,W-2*M,34,2,2,'S');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8);
+    doc.setTextColor(11,45,107);
+    doc.text('INFORMACIÓN DE MEDICIÓN',M+3,py+6);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(30,41,59);
+    const infoL=[
+      `Nombre: ${m.measurementName||'—'}`,
+      `Usuario: ${m.user||'—'}`,
+      `Fecha / Hora: ${m.datetime||'—'}`,
+    ];
+    const infoR=[
+      `Comentario: ${m.comment||'—'}`,
+      `Oscurecimiento: ${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}`,
+      `Archivo: ${m.filename}`,
+    ];
+    infoL.forEach((txt,i)=>doc.text(txt,M+3,py+12+i*7));
+    infoR.forEach((txt,i)=>doc.text(txt,M+95,py+12+i*7));
+    py+=38;
+
+    // Parámetros granulométricos (grid 3×2)
+    doc.setFillColor(11,45,107);
+    doc.rect(M,py,W-2*M,7,'F');
+    doc.setTextColor(255,255,255);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8.5);
+    doc.text('PARÁMETROS GRANULOMÉTRICOS',M+3,py+5);
+    py+=9;
+
+    const params=[
+      ['D10',`${st.d10.toFixed(2)} µm`],
+      ['D50 (mediana)',`${st.d50.toFixed(2)} µm`],
+      ['D90',`${st.d90.toFixed(2)} µm`],
+      ['Span (D90−D10)/D50',st.span.toFixed(3)],
+      [`Q3@${st.q45lbl}µm (malla 45)`,`${st.q45val.toFixed(2)}%`],
+      [`|Q3(${hi})−Q3(${lo})|`,`${st.diff.toFixed(2)}%`],
+    ];
+    params.forEach(([lbl,val],i)=>{
+      const col=i%3, row=Math.floor(i/3);
+      const px=M+col*60, bgy=py+row*13;
+      doc.setFillColor(col%2===0?241:248,245,250);
+      doc.rect(px,bgy,59,12,'F');
+      doc.setTextColor(100,116,139);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(6.5);
+      doc.text(lbl,px+2,bgy+4.5);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9);
+      doc.setTextColor(11,45,107);
+      doc.text(val,px+2,bgy+10);
+    });
+    py+=28;
+
+    // Mallas estándar
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(11,45,107);
+    doc.text('Q3 EN MALLAS ESTÁNDAR:',M,py+5);
+    py+=7;
+    [10,32,45,63,90,200].forEach((s,i)=>{
+      const v=getValueAtDiameter(m.Q3,s);
+      const px=M+i*32;
+      doc.setFillColor(i%2===0?11:21,i%2===0?45:37,i%2===0?107:75);
+      doc.rect(px,py,31,14,'F');
+      doc.setTextColor(245,168,0);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(7);
+      doc.text(`${s} µm`,px+2,py+5.5);
+      doc.setTextColor(255,255,255);
+      doc.setFontSize(9);
+      doc.text(`${v.toFixed(1)}%`,px+2,py+11.5);
+    });
+    py+=20;
+
+    // Gráfico (si el chart activo corresponde a esta medición o hay solo una seleccionada)
+    if(chartImg&&sel.length===1){
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(8);
+      doc.setTextColor(11,45,107);
+      doc.text('GRÁFICO ACTIVO:',M,py+4);
+      const imgH=(420/760)*(W-2*M);
+      doc.addImage(chartImg,'PNG',M,py+6,W-2*M,imgH);
+      py+=imgH+10;
+    }
+  });
+
+  showOverlay(false);
+  const fname=`Reporte_Granulometria_Argos_${new Date().toISOString().slice(0,10)}.pdf`;
+  doc.save(fname);
+  showToast(`✅ Reporte generado: ${fname}`);
+}
+
+// ────────────────────────────────────────────────────────────
+// EXPORTAR CSV
+// ────────────────────────────────────────────────────────────
+function exportCSV() {
+  const sel=getSelected();
+  if(!sel.length){showToast('⚠ Selecciona al menos una medición para exportar.');return;}
+  const headers=['Diámetro (µm)',...sel.map(i=>`Q3 ${measurements[i].measurementName||measurements[i].filename} (%)`),
+                  ...sel.map(i=>`q3 ${measurements[i].measurementName||measurements[i].filename}`)];
+  const allX=new Set();
+  sel.forEach(i=>{measurements[i].Q3.forEach(d=>allX.add(d.x));measurements[i].q3.forEach(d=>allX.add(d.x));});
+  const sorted=[...allX].sort((a,b)=>a-b);
+  const rows=sorted.map(x=>{
+    const q3vals=sel.map(i=>getValueAtDiameter(measurements[i].Q3,x).toFixed(4));
+    const q3dvals=sel.map(i=>getValueAtDiameter(measurements[i].q3,x).toFixed(6));
+    return[x.toFixed(4),...q3vals,...q3dvals].join(',');
+  });
+  const csv=[headers.join(','),...rows].join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`Granulometria_Argos_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast(`✅ CSV exportado con ${sorted.length} puntos y ${sel.length} medición${sel.length!==1?'es':''}`);
+}
+
+// ────────────────────────────────────────────────────────────
+// CARGA DE ARCHIVOS
+// ────────────────────────────────────────────────────────────
+async function loadFiles(fileList) {
+  const pdfs=Array.from(fileList).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+  if(!pdfs.length){showToast('⚠ No se encontraron archivos PDF en la selección.');return;}
+  showOverlay(true);
+  measurements=[]; selectedSet.clear();
+  let ok=0, fail=0;
+  for(let i=0;i<pdfs.length;i++){
+    setLoadingMsg(`Procesando ${i+1} / ${pdfs.length}`,pdfs[i].name);
+    try{ measurements.push(await parsePDF(pdfs[i])); ok++; }
+    catch(e){ console.warn('Error al parsear',pdfs[i].name,e); fail++; }
+  }
+  measurements.sort((a,b)=>parseDT(a.datetime)-parseDT(b.datetime));
+  showOverlay(false);
+  updateMeasurementList();
+  const badge=document.getElementById('pdf-count-badge');
+  badge.textContent=`${ok} PDF${ok!==1?'s':''}`;
+  badge.style.display='';
+  setStatus(`${ok} PDF${ok!==1?'s':''} cargado${ok!==1?'s':''} correctamente${fail?` · ${fail} con error`:''}`);
+  showToast(`✅ ${ok} archivo${ok!==1?'s':''} cargado${ok!==1?'s':''} exitosamente${fail?` (${fail} con error)`:''}`);
+  clearChartArea();
+}
+
+// ────────────────────────────────────────────────────────────
+// UI — LISTA Y META
+// ────────────────────────────────────────────────────────────
+function updateMeasurementList() {
+  const el=document.getElementById('measurementList');
+  const pill=document.getElementById('meas-count-pill');
+  pill.textContent=`${measurements.length} medición${measurements.length!==1?'es':''}`;
+  el.innerHTML='';
+  if(!measurements.length){
+    el.innerHTML='<div style="padding:14px;font-size:10px;color:var(--text-light);text-align:center">Sin mediciones cargadas</div>';
+    return;
+  }
+  measurements.forEach((m,i)=>{
+    const div=document.createElement('div');
+    div.className='meas-item'+(selectedSet.has(i)?' selected':'');
+    const{date,time}=fmtDT(m.datetime);
+    const oscTag=!isNaN(m.obscuration)?`<span class="mi-tag">Osc. ${m.obscuration.toFixed(1)}%</span>`:'';
+    div.innerHTML=`<div class="mi-date">${date} ${time}</div>
+      <div class="mi-name">${m.measurementName||m.filename}</div>
+      ${m.comment?`<div class="mi-comment">${m.comment}</div>`:''}
+      ${oscTag}`;
+    div.addEventListener('click',()=>toggleSelect(i));
+    el.appendChild(div);
+  });
+  updateMetaCard();
+}
+
+function toggleSelect(idx) {
+  if(selectedSet.has(idx)) selectedSet.delete(idx); else selectedSet.add(idx);
+  updateMeasurementList();
+}
+function selectAll()      { measurements.forEach((_,i)=>selectedSet.add(i)); updateMeasurementList(); }
+function clearSelection() { selectedSet.clear(); updateMeasurementList(); }
+function getSelected()    { return [...selectedSet]; }
+
+function updateMetaCard() {
+  const el=document.getElementById('meta-content');
+  const arr=[...selectedSet];
+  if(!arr.length){
+    el.innerHTML='<span style="color:var(--text-light);font-size:10px">Selecciona una medición para ver sus detalles</span>';
+    return;
+  }
+  if(arr.length>1){
+    const stats=arr.map(i=>calcStats(measurements[i]));
+    const avgD50=stats.reduce((s,st)=>s+st.d50,0)/stats.length;
+    const avgSpan=stats.reduce((s,st)=>s+st.span,0)/stats.length;
+    el.innerHTML=`<div class="meta-row"><span class="meta-lbl">Seleccionadas:</span><span class="meta-val">${arr.length} mediciones</span></div>
+      <div class="meta-row"><span class="meta-lbl">D50 promedio:</span><span class="meta-val">${avgD50.toFixed(2)} µm</span></div>
+      <div class="meta-row"><span class="meta-lbl">Span promedio:</span><span class="meta-val">${avgSpan.toFixed(3)}</span></div>`;
+    return;
+  }
+  const m=measurements[arr[0]]; const st=calcStats(m);
+  const obscClass=isNaN(m.obscuration)?'':(m.obscuration>=0.5&&m.obscuration<=20?'obsc-ok':(m.obscuration<0.5||m.obscuration>30?'obsc-bad':'obsc-warn'));
+  el.innerHTML=`
+    <div class="meta-row"><span class="meta-lbl">Nombre:</span><span class="meta-val">${m.measurementName||'—'}</span></div>
+    <div class="meta-row"><span class="meta-lbl">Usuario:</span><span class="meta-val">${m.user||'—'}</span></div>
+    <div class="meta-row"><span class="meta-lbl">Fecha:</span><span class="meta-val">${m.datetime||'—'}</span></div>
+    <div class="meta-row"><span class="meta-lbl">Comentario:</span><span class="meta-val">${m.comment||'—'}</span></div>
+    <div class="meta-row"><span class="meta-lbl">Oscurecimiento:</span><span class="meta-val ${obscClass}">${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}</span></div>
+    <div class="meta-row"><span class="meta-lbl">D10/D50/D90:</span><span class="meta-val">${st.d10.toFixed(1)} / <b>${st.d50.toFixed(1)}</b> / ${st.d90.toFixed(1)} µm</span></div>
+    <div class="meta-row"><span class="meta-lbl">Span:</span><span class="meta-val">${st.span.toFixed(3)}</span></div>`;
+}
+
+function clearChartArea() {
+  document.getElementById('chart').innerHTML=
+    '<div class="empty-chart"><div>Selecciona mediciones y un tipo de gráfico</div><div style="font-size:11px;color:var(--muted);font-family:Barlow,sans-serif;font-weight:400">Malvern Mastersizer · ISO 13320</div></div>';
+  setChartLabel('Selecciona mediciones y un tipo de gráfico');
+}
+
+// ────────────────────────────────────────────────────────────
+// BOTONES DE GRÁFICO
+// ────────────────────────────────────────────────────────────
+function doHistograma() {
+  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
+  plotHistograma(sel[0]);
+}
+function doQ3() {
+  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
+  plotQ3Comparison(sel);
+}
+function doq3() {
+  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
+  plotq3Comparison(sel);
+}
+function doHistorico() {
+  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
+  plotHistorico(sel);
+}
+
+// ────────────────────────────────────────────────────────────
+// INIT & EVENTOS
+// ────────────────────────────────────────────────────────────
+document.getElementById('folderInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
+document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
+
+// Fecha en header
+(function(){
+  const d=new Date();
+  document.getElementById('header-date').textContent=d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
+})();
+
+// Estadísticas abiertas por defecto
+document.getElementById('stats-arrow').classList.add('open');
+</script>
+</body>
+</html>

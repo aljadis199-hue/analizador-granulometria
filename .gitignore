@@ -1,0 +1,19 @@
+# Archivos de respaldo
+*copia*
+*backup*
+*.bak
+
+# Archivos temporales
+*.tmp
+*.log
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Carpeta interna de Claude Code (agentes, memoria, configuración)
+.claude/
+
+# PDFs de datos (no subir datos de planta)
+*.pdf

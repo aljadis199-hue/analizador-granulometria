@@ -421,6 +421,96 @@ function extractTableData(lines) {
   return{Q3,q3};
 }
 
+// ── Detección de formato ────────────────────────────────────
+function detectFormat(lines) {
+  for(const line of lines){
+    if(line.includes('CILAS')||line.includes('Valores acumulados característicos')) return 'cilas';
+    if(line.includes('Mastersizer')||line.includes('Tamaño inferior')||
+       line.includes('Distribución de tamaño de partícula por volumen')) return 'malvern';
+  }
+  // Detección por estructura de filas CILAS
+  for(const line of lines){
+    if(/^x\s+[\d.,]/.test(line.trim())||/^Q3\s+[\d.,]/.test(line.trim())) return 'cilas';
+  }
+  return 'malvern';
+}
+
+// ── Metadata CILAS ──────────────────────────────────────────
+function extractCilasMetadata(lines) {
+  const meta={measurementName:'',user:'',datetime:'',comment:'',obscuration:NaN};
+  for(const line of lines){
+    if(!meta.measurementName&&line.includes('Ref. de la muestra')){
+      const m=line.match(/Ref\.\s*de la muestra\s*:\s*(.+?)(?:\s{3,}|$)/);
+      if(m) meta.measurementName=m[1].trim();
+    }
+    if(!meta.user&&line.includes('Operador')){
+      const m=line.match(/Operador\s*:\s*(.+?)(?:\s{3,}|$)/);
+      if(m) meta.user=m[1].trim();
+    }
+    if(!meta.datetime&&(line.includes('Fecha')&&line.includes('Hora'))){
+      const fecha=line.match(/Fecha\s*:\s*([\d\/]+)/);
+      const hora=line.match(/Hora\s*:\s*([\d:]+(?:\s*[AP]M)?)/i);
+      if(fecha) meta.datetime=fecha[1]+(hora?' '+hora[1].trim():'');
+    }
+    if(!meta.comment&&line.includes('Comentarios')){
+      const m=line.match(/Comentarios\s*:\s*(.+?)(?:\s{3,}|$)/);
+      if(m) meta.comment=m[1].trim();
+    }
+    if(isNaN(meta.obscuration)&&/Obscuration\s*:/i.test(line)){
+      const m=line.match(/Obscuration\s*:\s*([\d.]+)\s*%/i);
+      if(m) meta.obscuration=parseFloat(m[1]);
+    }
+  }
+  return meta;
+}
+
+// ── Tabla CILAS (maneja dos sub-formatos) ───────────────────
+function extractCilasTableData(lines) {
+  const xVals=[], Q3Vals=[], q3Vals=[];
+  let inTable=false, headerSeen=false;
+
+  for(const line of lines){
+    if(line.includes('Valores acumulados característicos')){inTable=true;continue;}
+    if(!inTable) continue;
+    const t=line.trim();
+
+    // Sub-formato B: filas "x 0.20 0.30 ...", "Q3 0.59 ...", "q3 0.08 ..."
+    if(/^x\s+[\d.,]/.test(t)){
+      t.slice(1).trim().match(/[\d.,]+/g)?.forEach(n=>xVals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    if(/^Q3\s+[\d.,]/.test(t)){
+      t.slice(2).trim().match(/[\d.,]+/g)?.forEach(n=>Q3Vals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    if(/^q3\s+[\d.,]/.test(t)){
+      t.slice(2).trim().match(/[\d.,]+/g)?.forEach(n=>q3Vals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    // Cabecera del sub-formato A: "x Q3 q3"
+    if(/^x\s+Q3\s+q3/.test(t)){headerSeen=true;continue;}
+    // Sub-formato A: tripletes "0.20 0.59 0.08" después del header
+    if(headerSeen&&/^[\d.,]/.test(t)){
+      const nums=t.match(/[\d.,]+/g);
+      if(nums&&nums.length>=2){
+        xVals.push(parseFloat(nums[0].replace(',','.')));
+        Q3Vals.push(parseFloat(nums[1].replace(',','.')));
+        if(nums[2]) q3Vals.push(parseFloat(nums[2].replace(',','.')));
+      }
+    }
+  }
+
+  const Q3=[], q3=[];
+  const n=Math.min(xVals.length,Q3Vals.length);
+  for(let i=0;i<n;i++){
+    if(!isNaN(xVals[i])&&!isNaN(Q3Vals[i])) Q3.push({x:xVals[i],y:Q3Vals[i]});
+    if(i<q3Vals.length&&!isNaN(xVals[i])&&!isNaN(q3Vals[i])) q3.push({x:xVals[i],y:q3Vals[i]});
+  }
+  const byX=(a,b)=>a.x-b.x;
+  Q3.sort(byX); q3.sort(byX);
+  return{Q3,q3};
+}
+
 async function parsePDF(file) {
   const ab=await file.arrayBuffer();
   const pdfDoc=await pdfjsLib.getDocument({data:ab}).promise;
@@ -436,9 +526,10 @@ async function parsePDF(file) {
     cumH+=vp.height;
   }
   const lines=groupIntoLines(allItems);
-  const meta=extractMetadata(lines);
-  const{Q3,q3}=extractTableData(lines);
-  return{...meta,filename:file.name,Q3,q3};
+  const fmt=detectFormat(lines);
+  const meta=fmt==='cilas'?extractCilasMetadata(lines):extractMetadata(lines);
+  const{Q3,q3}=fmt==='cilas'?extractCilasTableData(lines):extractTableData(lines);
+  return{...meta,filename:file.name,Q3,q3,_format:fmt};
 }
 
 // ────────────────────────────────────────────────────────────
@@ -530,53 +621,90 @@ const baseLayout={
 // ────────────────────────────────────────────────────────────
 // FUNCIONES DE GRÁFICO
 // ────────────────────────────────────────────────────────────
-function plotHistograma(idx) {
-  const m=measurements[idx], q3d=m.q3, Q3d=m.Q3;
-  const barWidths=q3d.map((d,i)=>i<q3d.length-1?q3d[i+1].x-d.x:d.x-q3d[i-1].x);
-  const st=calcStats(m);
+function plotHistograma(indices) {
+  // Acepta un array de índices
+  if(!Array.isArray(indices)) indices=[indices];
+  const traces=[], shapes=[], annotations=[];
+  const multi=indices.length>1;
 
-  const barTrace={
-    x:q3d.map(d=>d.x),y:q3d.map(d=>d.y),width:barWidths,
-    type:'bar',name:'q3 — densidad',
-    marker:{color:hexToRgba(AZUL,0.65)},
-    yaxis:'y',offset:0,
-    hovertemplate:'Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>'
-  };
-  const lineTrace={
-    x:Q3d.map(d=>d.x),y:Q3d.map(d=>d.y),
-    type:'scatter',mode:'lines+markers',name:'Q3 — acumulada',
-    line:{color:'#DC2626',width:2.5},marker:{size:4,color:'#DC2626'},
-    yaxis:'y2',hovertemplate:'Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>'
-  };
+  indices.forEach((idx,i)=>{
+    const m=measurements[idx], color=COLORS[i%COLORS.length];
+    const st=calcStats(m);
+    const{date,time}=fmtDT(m.datetime);
+    const label=`${date} ${time} · ${m.measurementName||m.filename}`;
 
-  // Líneas verticales de referencia (D10, D50, D90)
-  const shapes=[
-    {type:'line',x0:st.d10,x1:st.d10,y0:0,y1:1,yref:'paper',line:{color:'rgba(100,116,139,0.5)',width:1.5,dash:'dot'}},
-    {type:'line',x0:st.d50,x1:st.d50,y0:0,y1:1,yref:'paper',line:{color:'rgba(11,45,107,0.6)',width:2,dash:'dash'}},
-    {type:'line',x0:st.d90,x1:st.d90,y0:0,y1:1,yref:'paper',line:{color:'rgba(100,116,139,0.5)',width:1.5,dash:'dot'}},
-  ];
-  const annotations=[
-    {x:Math.log10(st.d10),y:0.97,xref:'x',yref:'paper',text:'D10',showarrow:false,font:{size:9,color:'#64748B'},bgcolor:'rgba(255,255,255,0.7)'},
-    {x:Math.log10(st.d50),y:0.97,xref:'x',yref:'paper',text:`D50`,showarrow:false,font:{size:9,color:AZUL,weight:'bold'},bgcolor:'rgba(255,255,255,0.7)'},
-    {x:Math.log10(st.d90),y:0.97,xref:'x',yref:'paper',text:'D90',showarrow:false,font:{size:9,color:'#64748B'},bgcolor:'rgba(255,255,255,0.7)'},
-  ];
+    if(!multi){
+      // Vista clásica: barras para q3 + línea para Q3
+      const barWidths=m.q3.map((d,j)=>j<m.q3.length-1?m.q3[j+1].x-d.x:d.x-m.q3[j-1].x);
+      traces.push({
+        x:m.q3.map(d=>d.x),y:m.q3.map(d=>d.y),width:barWidths,
+        type:'bar',name:'q3 — densidad',
+        marker:{color:hexToRgba(AZUL,0.65)},yaxis:'y',offset:0,
+        hovertemplate:'Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>'
+      });
+      traces.push({
+        x:m.Q3.map(d=>d.x),y:m.Q3.map(d=>d.y),
+        type:'scatter',mode:'lines+markers',name:'Q3 — acumulada',
+        line:{color:'#DC2626',width:2.5},marker:{size:4,color:'#DC2626'},
+        yaxis:'y2',hovertemplate:'Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>'
+      });
+    } else {
+      // Vista multi: curvas de área para q3 + líneas para Q3
+      traces.push({
+        x:m.q3.map(d=>d.x),y:m.q3.map(d=>d.y),
+        type:'scatter',mode:'lines',
+        name:`q3 · ${label}`,
+        fill:'tozeroy',fillcolor:hexToRgba(color,0.18),
+        line:{color,width:2},yaxis:'y',
+        hovertemplate:`${m.measurementName||m.filename}<br>Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>`
+      });
+      traces.push({
+        x:m.Q3.map(d=>d.x),y:m.Q3.map(d=>d.y),
+        type:'scatter',mode:'lines',
+        name:`Q3 · ${label}`,
+        line:{color,width:2,dash:'dash'},yaxis:'y2',
+        hovertemplate:`${m.measurementName||m.filename}<br>Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>`
+      });
+    }
+
+    // Líneas D50 (una por medición en multi; solo la primera en single)
+    if(!multi||i===0){
+      const dColor=multi?color:'rgba(11,45,107,0.6)';
+      const dWidth=multi?1.5:2;
+      shapes.push(
+        {type:'line',x0:st.d10,x1:st.d10,y0:0,y1:1,yref:'paper',line:{color:'rgba(100,116,139,0.4)',width:1.2,dash:'dot'}},
+        {type:'line',x0:st.d50,x1:st.d50,y0:0,y1:1,yref:'paper',line:{color:dColor,width:dWidth,dash:'dash'}},
+        {type:'line',x0:st.d90,x1:st.d90,y0:0,y1:1,yref:'paper',line:{color:'rgba(100,116,139,0.4)',width:1.2,dash:'dot'}}
+      );
+      const yOff=multi?0.92-i*0.08:0.97;
+      annotations.push(
+        {x:Math.log10(st.d10),y:yOff,xref:'x',yref:'paper',text:'D10',showarrow:false,font:{size:8,color:'#64748B'},bgcolor:'rgba(255,255,255,0.7)'},
+        {x:Math.log10(st.d50),y:yOff,xref:'x',yref:'paper',text:`D50`,showarrow:false,font:{size:8,color:color},bgcolor:'rgba(255,255,255,0.7)'},
+        {x:Math.log10(st.d90),y:yOff,xref:'x',yref:'paper',text:'D90',showarrow:false,font:{size:8,color:'#64748B'},bgcolor:'rgba(255,255,255,0.7)'}
+      );
+    }
+  });
+
+  const title=multi
+    ?`HISTOGRAMA + ACUMULADA — ${indices.length} mediciones`
+    :`HISTOGRAMA + ACUMULADA — ${measurements[indices[0]].measurementName||measurements[indices[0]].filename}`;
 
   const layout={
     ...baseLayout,
-    title:{text:`HISTOGRAMA + ACUMULADA — ${m.measurementName||m.filename}`,font:{size:12,color:AZUL},pad:{t:5}},
+    title:{text:title,font:{size:12,color:AZUL},pad:{t:5}},
     xaxis:xAxisCfg,
     yaxis:{title:{text:'q3 (densidad)',font:{size:12,color:AZUL}},rangemode:'tozero',
            gridcolor:'rgba(128,128,128,0.25)',griddash:'dash',showgrid:true},
     yaxis2:{title:{text:'% acumulado bajo tamaño',font:{size:12,color:'#DC2626'}},
             tickfont:{color:'#DC2626'},overlaying:'y',side:'right',range:[0,100],showgrid:false},
     bargap:0,shapes,annotations,
-    legend:{...baseLayout.legend,x:0.01,y:0.99,xanchor:'left',yanchor:'top'},
-    margin:{t:52,b:60,l:70,r:85}
+    legend:{...baseLayout.legend,x:multi?1.02:0.01,y:1,xanchor:multi?'left':'left',yanchor:'top'},
+    margin:{t:52,b:60,l:70,r:multi?220:85}
   };
-  setChartLabel(`Histograma + Acumulada · ${m.datetime||m.filename}`,1);
+  setChartLabel(`Histograma + Acumulada`,indices.length);
   lastChartType='histograma';
-  Plotly.newPlot('chart',[barTrace,lineTrace],layout,PLOTLY_CFG);
-  updateStatsPanel([idx]);
+  Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
+  updateStatsPanel(indices);
 }
 
 function plotQ3Comparison(indices) {
@@ -794,14 +922,21 @@ function updateStatsPanel(indices) {
 async function generateReport() {
   const sel=getSelected();
   if(!sel.length){showToast('⚠ Selecciona al menos una medición para generar el reporte.');return;}
-  showOverlay(true); setLoadingMsg('Generando reporte PDF…','Por favor espere');
+  showOverlay(true); setLoadingMsg('Generando reporte PDF…','Capturando gráficos');
 
-  let chartImg=null;
-  try{
-    const chartEl=document.getElementById('chart');
-    if(chartEl.querySelector('.js-plotly-plot'))
-      chartImg=await Plotly.toImage('chart',{format:'png',width:760,height:420,scale:1.5});
-  }catch(e){console.warn('Sin gráfico para capturar',e);}
+  // Paleta Argos correcta
+  const NAVY=[16,27,70], LIME=[194,213,0], TEAL=[0,181,128];
+  const SLATE=[71,85,105], WHITE=[255,255,255];
+
+  // ── Capturar los 3 gráficos renderizando en el div principal ──
+  const CW=820, CH=310;
+  let imgHist=null, imgQ3=null, imgq3=null;
+  try{ plotHistograma([sel[0]]); await new Promise(r=>setTimeout(r,250));
+    imgHist=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
+  try{ plotQ3Comparison(sel); await new Promise(r=>setTimeout(r,250));
+    imgQ3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
+  try{ plotq3Comparison(sel); await new Promise(r=>setTimeout(r,250));
+    imgq3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
 
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
@@ -809,40 +944,36 @@ async function generateReport() {
   const now=new Date().toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'});
 
   function addHeader(pageNum){
-    // Franja azul principal
-    doc.setFillColor(11,45,107);
+    doc.setFillColor(...NAVY);
     doc.rect(0,0,W,28,'F');
-    // Franja dorada
-    doc.setFillColor(245,168,0);
+    doc.setFillColor(...LIME);
     doc.rect(0,28,W,4,'F');
-    // Logo ARGOS
-    doc.setFillColor(245,168,0);
+    doc.setFillColor(...LIME);
     doc.roundedRect(M,5,18,16,2,2,'F');
-    doc.setTextColor(11,45,107);
+    doc.setTextColor(...NAVY);
     doc.setFont('helvetica','bold');
     doc.setFontSize(9);
     doc.text('ARGOS',M+2,15.5);
-    // Título
-    doc.setTextColor(255,255,255);
+    doc.setTextColor(...WHITE);
     doc.setFontSize(12);
     doc.text('ANALIZADOR DE DISTRIBUCIÓN GRANULOMÉTRICA',M+22,12);
     doc.setFontSize(8);
     doc.setFont('helvetica','normal');
     doc.text('Laboratorios Argos · ISO 13320 · Malvern Mastersizer',M+22,19.5);
-    doc.setTextColor(11,45,107);
+    doc.setTextColor(...LIME);
     doc.setFont('helvetica','bold');
     doc.setFontSize(7);
     doc.text(`Generado: ${now}`,W-M,26.5,{align:'right'});
     if(pageNum>1){
-      doc.setTextColor(255,255,255);
+      doc.setTextColor(...WHITE);
       doc.setFontSize(7);
       doc.setFont('helvetica','normal');
-      doc.text(`Página ${pageNum}`,W-M,7,{align:'right'});
+      doc.text(`Pág. ${pageNum}`,W-M,7,{align:'right'});
     }
   }
 
   function addFooter(){
-    doc.setDrawColor(226,232,240);
+    doc.setDrawColor(...LIME);
     doc.line(M,285,W-M,285);
     doc.setFontSize(7);
     doc.setFont('helvetica','normal');
@@ -851,41 +982,38 @@ async function generateReport() {
     doc.text(`ISO 13320 · ${new Date().toLocaleDateString('es-CO')}`,W-M,290,{align:'right'});
   }
 
-  // ── PÁGINA 1: tabla comparativa (si hay >1 medición) ─────
+  function sectionBar(y,text){
+    doc.setFillColor(...NAVY);
+    doc.rect(M,y,W-2*M,7,'F');
+    doc.setFillColor(...TEAL);
+    doc.rect(M,y,3,7,'F');
+    doc.setTextColor(...WHITE);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8.5);
+    doc.text(text,M+6,y+5);
+    return y+9;
+  }
+
+  // ── PÁGINA 1: resumen comparativo ────────────────────────
   addHeader(1); addFooter();
   let y=38;
+  y=sectionBar(y,'RESUMEN COMPARATIVO DE MEDICIONES');
 
-  // Sección: resumen
-  doc.setFillColor(11,45,107);
-  doc.rect(M,y,W-2*M,7,'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(8.5);
-  doc.text('RESUMEN COMPARATIVO DE MEDICIONES',M+3,y+5);
-  y+=9;
-
-  // Cabecera tabla
   const cols=[['Medición',42],['D10',15],['D50',15],['D90',15],['Span',14],['Q3@45',18],['|ΔQ3|',18],['Oscurec.',22]];
   let xc=M;
-  doc.setFillColor(71,85,105);
+  doc.setFillColor(...SLATE);
   doc.rect(M,y,W-2*M,7,'F');
-  doc.setTextColor(255,255,255);
+  doc.setTextColor(...WHITE);
   doc.setFontSize(7);
-  cols.forEach(([lbl,w])=>{
-    doc.text(lbl,xc+w/2,y+5,{align:'center'});
-    xc+=w;
-  });
+  cols.forEach(([lbl,w])=>{doc.text(lbl,xc+w/2,y+5,{align:'center'});xc+=w;});
   y+=7;
 
   sel.forEach((idx,ri)=>{
     const m=measurements[idx]; const st=calcStats(m);
-    const{date,time}=fmtDT(m.datetime);
-    const bg=ri%2===0?[248,250,252]:[241,245,249];
-    doc.setFillColor(...bg);
+    const{date}=fmtDT(m.datetime);
+    doc.setFillColor(...(ri%2===0?[248,250,252]:[241,245,249]));
     doc.rect(M,y,W-2*M,8,'F');
-    doc.setTextColor(30,41,59);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(7);
+    doc.setTextColor(30,41,59); doc.setFont('helvetica','normal'); doc.setFontSize(7);
     xc=M;
     const vals=[
       `${date} ${m.measurementName||m.filename}`.slice(0,32),
@@ -893,31 +1021,36 @@ async function generateReport() {
       st.span.toFixed(2),`${st.q45val.toFixed(1)}%`,`${st.diff.toFixed(2)}%`,
       isNaN(m.obscuration)?'—':`${m.obscuration.toFixed(1)}%`
     ];
-    cols.forEach(([,w],i)=>{
-      doc.text(vals[i],xc+w/2,y+5.5,{align:'center'});
-      xc+=w;
-    });
+    cols.forEach(([,w],i)=>{doc.text(vals[i],xc+w/2,y+5.5,{align:'center'});xc+=w;});
     y+=8;
   });
-  y+=6;
 
-  // Insertar gráfico en página 1 si cabe
-  if(chartImg){
-    const imgH=Math.min((420/760)*(W-2*M), 285-y-10);
-    if(imgH>40){
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(8);
-      doc.setTextColor(11,45,107);
-      doc.text('GRÁFICO ACTIVO:',M,y+5);
-      doc.addImage(chartImg,'PNG',M,y+7,W-2*M,imgH);
-      y+=imgH+12;
-    }
-  }
+  // ── PÁGINA 2: los 3 gráficos analíticos ──────────────────
+  doc.addPage();
+  addHeader(2); addFooter();
+  let gy=38;
+  gy=sectionBar(gy,'GRÁFICOS ANALÍTICOS');
+
+  const chartW=W-2*M;
+  const chartH=(CH/CW)*chartW;
+  const chartGap=5;
+
+  [
+    [imgHist,'HISTOGRAMA + CURVA ACUMULADA (primera medición)'],
+    [imgQ3,  'COMPARACIÓN Q3 — % ACUMULADO'],
+    [imgq3,  'COMPARACIÓN q3 — DENSIDAD'],
+  ].forEach(([img,lbl])=>{
+    if(!img) return;
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...TEAL);
+    doc.text(lbl,M,gy+4);
+    doc.addImage(img,'PNG',M,gy+5,chartW,chartH);
+    gy+=chartH+chartGap+6;
+  });
 
   // ── PÁGINAS INDIVIDUALES ──────────────────────────────────
   sel.forEach((idx,pi)=>{
     doc.addPage();
-    addHeader(pi+2); addFooter();
+    addHeader(pi+3); addFooter();
     const m=measurements[idx]; const st=calcStats(m);
     const{lo,hi}=resolveBounds(m.Q3);
     let py=38;
@@ -925,93 +1058,52 @@ async function generateReport() {
     // Info de medición
     doc.setFillColor(248,250,252);
     doc.roundedRect(M,py,W-2*M,34,2,2,'F');
-    doc.setDrawColor(226,232,240);
+    doc.setDrawColor(...LIME);
     doc.roundedRect(M,py,W-2*M,34,2,2,'S');
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8);
-    doc.setTextColor(11,45,107);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
     doc.text('INFORMACIÓN DE MEDICIÓN',M+3,py+6);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(30,41,59);
-    const infoL=[
-      `Nombre: ${m.measurementName||'—'}`,
-      `Usuario: ${m.user||'—'}`,
-      `Fecha / Hora: ${m.datetime||'—'}`,
-    ];
-    const infoR=[
-      `Comentario: ${m.comment||'—'}`,
-      `Oscurecimiento: ${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}`,
-      `Archivo: ${m.filename}`,
-    ];
-    infoL.forEach((txt,i)=>doc.text(txt,M+3,py+12+i*7));
-    infoR.forEach((txt,i)=>doc.text(txt,M+95,py+12+i*7));
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(30,41,59);
+    [`Nombre: ${m.measurementName||'—'}`,`Usuario: ${m.user||'—'}`,`Fecha / Hora: ${m.datetime||'—'}`]
+      .forEach((t,i)=>doc.text(t,M+3,py+12+i*7));
+    [`Comentario: ${m.comment||'—'}`,`Oscurecimiento: ${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}`,`Archivo: ${m.filename}`]
+      .forEach((t,i)=>doc.text(t,M+95,py+12+i*7));
     py+=38;
 
-    // Parámetros granulométricos (grid 3×2)
-    doc.setFillColor(11,45,107);
-    doc.rect(M,py,W-2*M,7,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8.5);
-    doc.text('PARÁMETROS GRANULOMÉTRICOS',M+3,py+5);
-    py+=9;
-
+    // Parámetros granulométricos
+    py=sectionBar(py,'PARÁMETROS GRANULOMÉTRICOS');
     const params=[
-      ['D10',`${st.d10.toFixed(2)} µm`],
-      ['D50 (mediana)',`${st.d50.toFixed(2)} µm`],
-      ['D90',`${st.d90.toFixed(2)} µm`],
-      ['Span (D90−D10)/D50',st.span.toFixed(3)],
+      ['D10',`${st.d10.toFixed(2)} µm`],['D50 (mediana)',`${st.d50.toFixed(2)} µm`],
+      ['D90',`${st.d90.toFixed(2)} µm`],['Span (D90−D10)/D50',st.span.toFixed(3)],
       [`Q3@${st.q45lbl}µm (malla 45)`,`${st.q45val.toFixed(2)}%`],
       [`|Q3(${hi})−Q3(${lo})|`,`${st.diff.toFixed(2)}%`],
     ];
     params.forEach(([lbl,val],i)=>{
       const col=i%3, row=Math.floor(i/3);
-      const px=M+col*60, bgy=py+row*13;
-      doc.setFillColor(col%2===0?241:248,245,250);
-      doc.rect(px,bgy,59,12,'F');
-      doc.setTextColor(100,116,139);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(6.5);
-      doc.text(lbl,px+2,bgy+4.5);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(9);
-      doc.setTextColor(11,45,107);
-      doc.text(val,px+2,bgy+10);
+      const px=M+col*60, by=py+row*13;
+      doc.setFillColor(...(col%2===0?[16,27,70,0.06]:[0,181,128,0.06]));
+      doc.setFillColor(col%2===0?240:232,col%2===0?243:246,col%2===0?255:252);
+      doc.rect(px,by,59,12,'F');
+      doc.setTextColor(100,116,139); doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
+      doc.text(lbl,px+2,by+4.5);
+      doc.setFontSize(9); doc.setTextColor(...NAVY);
+      doc.text(val,px+2,by+10);
     });
     py+=28;
 
     // Mallas estándar
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(11,45,107);
-    doc.text('Q3 EN MALLAS ESTÁNDAR:',M,py+5);
-    py+=7;
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...NAVY);
+    doc.text('Q3 EN MALLAS ESTÁNDAR:',M,py+5); py+=7;
     [10,32,45,63,90,200].forEach((s,i)=>{
       const v=getValueAtDiameter(m.Q3,s);
       const px=M+i*32;
-      doc.setFillColor(i%2===0?11:21,i%2===0?45:37,i%2===0?107:75);
+      doc.setFillColor(...(i%2===0?NAVY:TEAL));
       doc.rect(px,py,31,14,'F');
-      doc.setTextColor(245,168,0);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(7);
+      doc.setTextColor(...LIME); doc.setFont('helvetica','bold'); doc.setFontSize(7);
       doc.text(`${s} µm`,px+2,py+5.5);
-      doc.setTextColor(255,255,255);
-      doc.setFontSize(9);
+      doc.setTextColor(...WHITE); doc.setFontSize(9);
       doc.text(`${v.toFixed(1)}%`,px+2,py+11.5);
     });
     py+=20;
-
-    // Gráfico (si el chart activo corresponde a esta medición o hay solo una seleccionada)
-    if(chartImg&&sel.length===1){
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(8);
-      doc.setTextColor(11,45,107);
-      doc.text('GRÁFICO ACTIVO:',M,py+4);
-      const imgH=(420/760)*(W-2*M);
-      doc.addImage(chartImg,'PNG',M,py+6,W-2*M,imgH);
-      py+=imgH+10;
-    }
   });
 
   showOverlay(false);
@@ -1088,10 +1180,11 @@ function updateMeasurementList() {
     div.className='meas-item'+(selectedSet.has(i)?' selected':'');
     const{date,time}=fmtDT(m.datetime);
     const oscTag=!isNaN(m.obscuration)?`<span class="mi-tag">Osc. ${m.obscuration.toFixed(1)}%</span>`:'';
+    const fmtTag=m._format==='cilas'?`<span class="mi-tag" style="background:rgba(0,181,128,.25);color:#00B580">CILAS</span>`:`<span class="mi-tag">Malvern</span>`;
     div.innerHTML=`<div class="mi-date">${date} ${time}</div>
       <div class="mi-name">${m.measurementName||m.filename}</div>
       ${m.comment?`<div class="mi-comment">${m.comment}</div>`:''}
-      ${oscTag}`;
+      <div style="display:flex;gap:3px;flex-wrap:wrap">${oscTag}${fmtTag}</div>`;
     div.addEventListener('click',()=>toggleSelect(i));
     el.appendChild(div);
   });
@@ -1145,7 +1238,7 @@ function clearChartArea() {
 // ────────────────────────────────────────────────────────────
 function doHistograma() {
   const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
-  plotHistograma(sel[0]);
+  plotHistograma(sel);
 }
 function doQ3() {
   const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}

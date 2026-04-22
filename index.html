@@ -126,7 +126,7 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
 #stats-content{max-height:0;overflow:hidden;transition:max-height .3s ease}
 #stats-content.open{max-height:180px}
 #stats-inner{padding:8px 10px;overflow-x:auto}
-.stats-table{width:100%;border-collapse:collapse;font-size:10px;min-width:500px}
+.stats-table{width:100%;border-collapse:collapse;font-size:10px;min-width:600px}
 .stats-table th{background:var(--navy);color:#fff;padding:5px 8px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;white-space:nowrap;letter-spacing:.3px}
 .stats-table th:first-child{text-align:left}
 .stats-table td{padding:4px 8px;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap;font-family:'Barlow',sans-serif;font-size:10px}
@@ -297,10 +297,11 @@ const PLOTLY_CFG = {responsive:true, displayModeBar:true, displaylogo:false,
 // ────────────────────────────────────────────────────────────
 // STATE
 // ────────────────────────────────────────────────────────────
-let measurements  = [];
-let selectedSet   = new Set();
-let statsOpen     = true;
-let lastChartType = null;
+let measurements      = [];
+let selectedSet       = new Set();
+let statsOpen         = true;
+let lastChartType     = null;
+let lastStatsIndices  = [];
 
 // ────────────────────────────────────────────────────────────
 // UTILIDADES
@@ -882,11 +883,18 @@ function semaforo(val, good, warn) {
 function updateStatsPanel(indices) {
   const inner=document.getElementById('stats-inner');
   const summary=document.getElementById('stats-summary');
-  if(!indices||!indices.length){ inner.innerHTML='<div style="font-size:10px;color:var(--text-light);padding:6px 4px">Selecciona mediciones para ver parámetros.</div>'; summary.textContent='Sin selección'; return; }
+  if(!indices||!indices.length){
+    inner.innerHTML='<div style="font-size:10px;color:var(--text-light);padding:6px 4px">Selecciona mediciones para ver parámetros.</div>';
+    summary.textContent='Sin selección';
+    lastStatsIndices=[];
+    return;
+  }
+  lastStatsIndices=indices;
 
   const rows=indices.map(idx=>{
     const m=measurements[idx]; const st=calcStats(m);
     const q10=getValueAtDiameter(m.Q3,10),q32=getValueAtDiameter(m.Q3,32),q63=getValueAtDiameter(m.Q3,63),q90=getValueAtDiameter(m.Q3,90);
+    const area=calcTrapezoidArea(m.q3,st.lo,st.hi);
     const{date}=fmtDT(m.datetime);
     return`<tr>
       <td title="${m.datetime}">${date} · ${m.measurementName||m.filename}</td>
@@ -900,20 +908,59 @@ function updateStatsPanel(indices) {
       <td>${q63.toFixed(1)}%</td>
       <td>${q90.toFixed(1)}%</td>
       <td>${semaforo(st.diff,30,45)}${st.diff.toFixed(2)}%</td>
+      <td>${area.toFixed(3)}</td>
     </tr>`;
   }).join('');
 
-  inner.innerHTML=`<table class="stats-table">
+  inner.innerHTML=`<div style="display:flex;justify-content:flex-end;padding:4px 2px 6px">
+    <button onclick="exportStatsExcel()" style="border:none;background:var(--teal);color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;padding:4px 12px;border-radius:4px;cursor:pointer;letter-spacing:.4px;display:flex;align-items:center;gap:5px" title="Descargar tabla como Excel">⬇ Descargar Excel</button>
+  </div>
+  <table class="stats-table">
     <thead><tr>
       <th>Medición</th>
       <th>D10 (µm)</th><th>D50 (µm)</th><th>D90 (µm)</th><th>Span</th>
       <th>Q3@10</th><th>Q3@32</th><th>Q3@45/45.5</th><th>Q3@63</th><th>Q3@90</th>
-      <th>|ΔQ3| ~3–30</th>
+      <th>|ΔQ3| ~3–30</th><th>Área q3 ~3–30</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
   summary.textContent=`${indices.length} medición${indices.length!==1?'es':''} seleccionada${indices.length!==1?'s':''}`;
   if(!statsOpen) toggleStats();
+}
+
+// ────────────────────────────────────────────────────────────
+// EXPORTAR TABLA DE PARÁMETROS A EXCEL
+// ────────────────────────────────────────────────────────────
+function exportStatsExcel() {
+  if(!lastStatsIndices.length){showToast('⚠ No hay datos en la tabla.');return;}
+  const headers=['Medición','Fecha','D10 (µm)','D50 (µm)','D90 (µm)','Span',
+    'Q3@10 (%)','Q3@32 (%)','Q3@45/45.5 (%)','Q3@63 (%)','Q3@90 (%)',
+    '|ΔQ3| ~3-30 (%)','Área q3 ~3-30','Oscurecimiento (%)'];
+
+  const rows=lastStatsIndices.map(idx=>{
+    const m=measurements[idx]; const st=calcStats(m);
+    const q10=getValueAtDiameter(m.Q3,10),q32=getValueAtDiameter(m.Q3,32);
+    const q63=getValueAtDiameter(m.Q3,63),q90=getValueAtDiameter(m.Q3,90);
+    const area=calcTrapezoidArea(m.q3,st.lo,st.hi);
+    return[
+      `"${(m.measurementName||m.filename).replace(/"/g,'""')}"`,
+      `"${(m.datetime||'').replace(/"/g,'""')}"`,
+      st.d10.toFixed(2), st.d50.toFixed(2), st.d90.toFixed(2), st.span.toFixed(3),
+      q10.toFixed(2), q32.toFixed(2), st.q45val.toFixed(2),
+      q63.toFixed(2), q90.toFixed(2),
+      st.diff.toFixed(3), area.toFixed(4),
+      isNaN(m.obscuration)?'':m.obscuration.toFixed(2)
+    ].join(',');
+  });
+
+  const csv=[headers.join(','),...rows].join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`Parametros_Granulometria_Argos_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('✅ Tabla exportada — ábrela con Excel');
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1223,50 +1270,3 @@ function updateMetaCard() {
     <div class="meta-row"><span class="meta-lbl">Fecha:</span><span class="meta-val">${m.datetime||'—'}</span></div>
     <div class="meta-row"><span class="meta-lbl">Comentario:</span><span class="meta-val">${m.comment||'—'}</span></div>
     <div class="meta-row"><span class="meta-lbl">Oscurecimiento:</span><span class="meta-val ${obscClass}">${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}</span></div>
-    <div class="meta-row"><span class="meta-lbl">D10/D50/D90:</span><span class="meta-val">${st.d10.toFixed(1)} / <b>${st.d50.toFixed(1)}</b> / ${st.d90.toFixed(1)} µm</span></div>
-    <div class="meta-row"><span class="meta-lbl">Span:</span><span class="meta-val">${st.span.toFixed(3)}</span></div>`;
-}
-
-function clearChartArea() {
-  document.getElementById('chart').innerHTML=
-    '<div class="empty-chart"><div>Selecciona mediciones y un tipo de gráfico</div><div style="font-size:11px;color:var(--muted);font-family:Barlow,sans-serif;font-weight:400">Malvern Mastersizer · ISO 13320</div></div>';
-  setChartLabel('Selecciona mediciones y un tipo de gráfico');
-}
-
-// ────────────────────────────────────────────────────────────
-// BOTONES DE GRÁFICO
-// ────────────────────────────────────────────────────────────
-function doHistograma() {
-  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
-  plotHistograma(sel);
-}
-function doQ3() {
-  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
-  plotQ3Comparison(sel);
-}
-function doq3() {
-  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
-  plotq3Comparison(sel);
-}
-function doHistorico() {
-  const sel=getSelected(); if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
-  plotHistorico(sel);
-}
-
-// ────────────────────────────────────────────────────────────
-// INIT & EVENTOS
-// ────────────────────────────────────────────────────────────
-document.getElementById('folderInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
-document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
-
-// Fecha en header
-(function(){
-  const d=new Date();
-  document.getElementById('header-date').textContent=d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
-})();
-
-// Estadísticas abiertas por defecto
-document.getElementById('stats-arrow').classList.add('open');
-</script>
-</body>
-</html>

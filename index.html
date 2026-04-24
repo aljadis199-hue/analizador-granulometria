@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Analizador de Distribución Granulométrica — Laboratorios Argos</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -267,7 +270,7 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
     <span class="footer-dot">·</span>
     <span>ISO 13320 · Malvern Mastersizer</span>
   </div>
-  <div id="footer-right">© 2026 Argos — Todos los derechos reservados</div>
+  <div id="footer-right">© 2026 Argos — Todos los derechos reservados &nbsp;·&nbsp; <span id="app-version" style="color:rgba(255,255,255,.3)"></span></div>
 </div>
 
 <!-- ─────────────────────────────────────────────────────────── -->
@@ -1314,6 +1317,26 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
 
 // Estadísticas abiertas por defecto
 document.getElementById('stats-arrow').classList.add('open');
+
+// ── Verificación de dependencias CDN ────────────────────────
+(function checkDeps(){
+  const missing=[];
+  if(typeof pdfjsLib==='undefined')  missing.push('PDF.js');
+  if(typeof Plotly==='undefined')    missing.push('Plotly');
+  if(typeof window.jspdf==='undefined') missing.push('jsPDF');
+  if(missing.length){
+    const msg=`⚠ Librerías no cargadas: ${missing.join(', ')}. Verifica tu conexión a internet y recarga con Ctrl+Shift+R.`;
+    setStatus(msg);
+    showToast(msg, 10000);
+    console.error('[DTP] Dependencias faltantes:', missing);
+  }
+})();
+
+// ── Versión visible en footer ────────────────────────────────
+(function stampVersion(){
+  const el=document.getElementById('app-version');
+  if(el) el.textContent='v'+new Date(document.lastModified).toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
+})();
 </script>
 </body>
 </html>

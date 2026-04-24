@@ -236,24 +236,102 @@ function extractTableData(lines) {
 }
 
 // ---------------------------------------------------------------------------
-// parsePDF  (main entry point)
+// detectFormat
 // ---------------------------------------------------------------------------
+function detectFormat(lines) {
+  for (const line of lines) {
+    if (line.includes('CILAS') || line.includes('Valores acumulados característicos')) return 'cilas';
+    if (line.includes('Mastersizer') || line.includes('Tamaño inferior') ||
+        line.includes('Distribución de tamaño de partícula por volumen')) return 'malvern';
+  }
+  for (const line of lines) {
+    if (/^x\s+[\d.,]/.test(line.trim()) || /^Q3\s+[\d.,]/.test(line.trim())) return 'cilas';
+  }
+  return 'malvern';
+}
 
-/**
- * Parse a Malvern Mastersizer granulometry PDF report.
- *
- * @param {File} file  A browser File object (from <input type="file"> etc.)
- * @returns {Promise<{
- *   measurementName: string,
- *   user: string,
- *   datetime: string,
- *   comment: string,
- *   obscuration: number,
- *   filename: string,
- *   Q3: {x: number, y: number}[],
- *   q3: {x: number, y: number}[],
- * }>}
- */
+// ---------------------------------------------------------------------------
+// extractCilasMetadata
+// ---------------------------------------------------------------------------
+function extractCilasMetadata(lines) {
+  const meta = { measurementName:'', user:'', datetime:'', comment:'', obscuration:NaN };
+  for (const line of lines) {
+    if (!meta.measurementName && line.includes('Ref. de la muestra')) {
+      const m = line.match(/Ref\.\s*de la muestra\s*:\s*(.+?)(?:\s{3,}|$)/);
+      if (m) meta.measurementName = m[1].trim();
+    }
+    if (!meta.user && line.includes('Operador')) {
+      const m = line.match(/Operador\s*:\s*(.+?)(?:\s{3,}|$)/);
+      if (m) meta.user = m[1].trim();
+    }
+    if (!meta.datetime && line.includes('Fecha') && line.includes('Hora')) {
+      const fecha = line.match(/Fecha\s*:\s*([\d\/]+)/);
+      const hora  = line.match(/Hora\s*:\s*([\d:]+(?:\s*[AP]M)?)/i);
+      if (fecha) meta.datetime = fecha[1] + (hora ? ' ' + hora[1].trim() : '');
+    }
+    if (!meta.comment && line.includes('Comentarios')) {
+      const m = line.match(/Comentarios\s*:\s*(.+?)(?:\s{3,}|$)/);
+      if (m) meta.comment = m[1].trim();
+    }
+    if (isNaN(meta.obscuration) && /Obscuration\s*:/i.test(line)) {
+      const m = line.match(/Obscuration\s*:\s*([\d.]+)\s*%/i);
+      if (m) meta.obscuration = parseFloat(m[1]);
+    }
+  }
+  return meta;
+}
+
+// ---------------------------------------------------------------------------
+// extractCilasTableData  (handles row-based and triplet-based sub-formats)
+// ---------------------------------------------------------------------------
+function extractCilasTableData(lines) {
+  const xVals = [], Q3Vals = [], q3Vals = [];
+  let inTable = false, headerSeen = false;
+
+  for (const line of lines) {
+    if (line.includes('Valores acumulados característicos')) { inTable = true; continue; }
+    if (!inTable) continue;
+    const t = line.trim();
+
+    // Sub-format B: rows starting with label "x", "Q3", "q3"
+    if (/^x\s+[\d.,]/.test(t)) {
+      t.slice(1).trim().match(/[\d.,]+/g)?.forEach(n => xVals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    if (/^Q3\s+[\d.,]/.test(t)) {
+      t.slice(2).trim().match(/[\d.,]+/g)?.forEach(n => Q3Vals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    if (/^q3\s+[\d.,]/.test(t)) {
+      t.slice(2).trim().match(/[\d.,]+/g)?.forEach(n => q3Vals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    // Sub-format A: header "x Q3 q3" then one triplet per row
+    if (/^x\s+Q3\s+q3/.test(t)) { headerSeen = true; continue; }
+    if (headerSeen && /^[\d.,]/.test(t)) {
+      const nums = t.match(/[\d.,]+/g);
+      if (nums && nums.length >= 2) {
+        xVals.push(parseFloat(nums[0].replace(',','.')));
+        Q3Vals.push(parseFloat(nums[1].replace(',','.')));
+        if (nums[2]) q3Vals.push(parseFloat(nums[2].replace(',','.')));
+      }
+    }
+  }
+
+  const Q3 = [], q3 = [];
+  const n = Math.min(xVals.length, Q3Vals.length);
+  for (let i = 0; i < n; i++) {
+    if (!isNaN(xVals[i]) && !isNaN(Q3Vals[i])) Q3.push({ x: xVals[i], y: Q3Vals[i] });
+    if (i < q3Vals.length && !isNaN(xVals[i]) && !isNaN(q3Vals[i])) q3.push({ x: xVals[i], y: q3Vals[i] });
+  }
+  const byX = (a, b) => a.x - b.x;
+  Q3.sort(byX); q3.sort(byX);
+  return { Q3, q3 };
+}
+
+// ---------------------------------------------------------------------------
+// parsePDF  (main entry point — supports Malvern Mastersizer and CILAS 990)
+// ---------------------------------------------------------------------------
 async function parsePDF(file) {
   if (!file || !(file instanceof File)) {
     throw new TypeError('parsePDF: argument must be a File object.');
@@ -262,47 +340,29 @@ async function parsePDF(file) {
     throw new ReferenceError('parsePDF: pdfjsLib is not defined. Make sure the PDF.js library is loaded.');
   }
 
-  // ---- Load the PDF --------------------------------------------------------
   const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  const pdfDoc = await loadingTask.promise;
+  const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-  // ---- Extract text items from every page ----------------------------------
-  const allItems = []; // {str, x, y} with absolute Y coords across pages
-  const pageHeights = [];
+  const allItems = [];
   let cumulativeHeight = 0;
 
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
     const page = await pdfDoc.getPage(pageNum);
     const viewport = page.getViewport({ scale: 1 });
-    const pageHeight = viewport.height;
-    pageHeights.push(pageHeight);
-
     const textContent = await page.getTextContent();
-
     for (const item of textContent.items) {
-      // item.transform = [scaleX, skewX, skewY, scaleY, translateX, translateY]
-      // translateX is the X position; translateY is the Y measured from the
-      // bottom of the page (PDF coordinate system).
-      // We convert to top-down by: absoluteY = cumulativeHeight + (pageHeight - translateY)
-      const tx = item.transform[4]; // X
-      const ty = item.transform[5]; // Y from page bottom
-      const absoluteY = cumulativeHeight + (pageHeight - ty);
-
+      const absoluteY = cumulativeHeight + (viewport.height - item.transform[5]);
       if (item.str && item.str.trim() !== '') {
-        allItems.push({ str: item.str, x: tx, y: absoluteY });
+        allItems.push({ str: item.str, x: item.transform[4], y: absoluteY });
       }
     }
-
-    cumulativeHeight += pageHeight;
+    cumulativeHeight += viewport.height;
   }
 
-  // ---- Group items into visual lines ---------------------------------------
-  const lines = groupIntoLines(allItems, pageHeights);
-
-  // ---- Parse metadata and table data ---------------------------------------
-  const meta = extractMetadata(lines);
-  const { Q3, q3 } = extractTableData(lines);
+  const lines = groupIntoLines(allItems);
+  const fmt   = detectFormat(lines);
+  const meta  = fmt === 'cilas' ? extractCilasMetadata(lines)  : extractMetadata(lines);
+  const { Q3, q3 } = fmt === 'cilas' ? extractCilasTableData(lines) : extractTableData(lines);
 
   return {
     measurementName: meta.measurementName,
@@ -311,17 +371,21 @@ async function parsePDF(file) {
     comment: meta.comment,
     obscuration: meta.obscuration,
     filename: file.name,
+    _format: fmt,
     Q3,
     q3,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Exports (works in both ES-module and CommonJS / browser-global contexts)
+// Exports
 // ---------------------------------------------------------------------------
-
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parsePDF, groupIntoLines, extractMetadata, extractTableData, extractPairs };
+  module.exports = { parsePDF, detectFormat, groupIntoLines,
+    extractMetadata, extractCilasMetadata,
+    extractTableData, extractCilasTableData, extractPairs };
 } else if (typeof window !== 'undefined') {
-  window.granulometryParser = { parsePDF, groupIntoLines, extractMetadata, extractTableData, extractPairs };
+  window.granulometryParser = { parsePDF, detectFormat, groupIntoLines,
+    extractMetadata, extractCilasMetadata,
+    extractTableData, extractCilasTableData, extractPairs };
 }

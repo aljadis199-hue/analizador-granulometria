@@ -491,8 +491,13 @@ function extractCilasTableData(lines) {
       t.slice(2).trim().match(/[\d.,]+/g)?.forEach(n=>q3Vals.push(parseFloat(n.replace(',','.'))));
       continue;
     }
-    // Cabecera del sub-formato A: "x Q3 q3"
-    if(/^x\s+Q3\s+q3/.test(t)){headerSeen=true;continue;}
+    // DQ3 = frecuencia relativa en CILAS 1064 (equivalente a q3)
+    if(/^DQ3\s+[\d.,]/.test(t)){
+      t.slice(3).trim().match(/[\d.,]+/g)?.forEach(n=>q3Vals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    // Cabecera del sub-formato A: "x Q3 q3" o "x Q3 DQ3"
+    if(/^x\s+Q3\s+(?:q3|DQ3)/.test(t)){headerSeen=true;continue;}
     // Sub-formato A: tripletes "0.20 0.59 0.08" después del header
     if(headerSeen&&/^[\d.,]/.test(t)){
       const nums=t.match(/[\d.,]+/g);
@@ -530,10 +535,25 @@ async function parsePDF(file) {
     cumH+=vp.height;
   }
   const lines=groupIntoLines(allItems);
-  const fmt=detectFormat(lines);
-  const meta=fmt==='cilas'?extractCilasMetadata(lines):extractMetadata(lines);
-  const{Q3,q3}=fmt==='cilas'?extractCilasTableData(lines):extractTableData(lines);
-  return{...meta,filename:file.name,Q3,q3,_format:fmt};
+  // Dividir en segmentos por medición (PDFs multi-muestra)
+  const TITLE='DISTRIBUCION DEL TAMAÑO DE PARTICULAS';
+  const segments=[]; let cur=[];
+  for(const line of lines){
+    if(line.includes(TITLE)&&cur.length>0){segments.push(cur);cur=[];}
+    cur.push(line);
+  }
+  if(cur.length>0) segments.push(cur);
+  const results=[];
+  for(const seg of segments){
+    const fmt=detectFormat(seg);
+    // Omitir páginas CILAS sin tabla completa (solo "definidos por el usuario")
+    if(fmt==='cilas'&&!seg.some(l=>l.includes('Valores acumulados característicos'))) continue;
+    const meta=fmt==='cilas'?extractCilasMetadata(seg):extractMetadata(seg);
+    const{Q3,q3}=fmt==='cilas'?extractCilasTableData(seg):extractTableData(seg);
+    if(Q3.length===0&&q3.length===0) continue;
+    results.push({...meta,filename:file.name,Q3,q3,_format:fmt});
+  }
+  return results;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1196,20 +1216,25 @@ async function loadFiles(fileList) {
   if(!pdfs.length){showToast('⚠ No se encontraron archivos PDF en la selección.');return;}
   showOverlay(true);
   measurements=[]; selectedSet.clear();
-  let ok=0, fail=0;
+  let ok=0, fail=0, totalM=0;
   for(let i=0;i<pdfs.length;i++){
     setLoadingMsg(`Procesando ${i+1} / ${pdfs.length}`,pdfs[i].name);
-    try{ measurements.push(await parsePDF(pdfs[i])); ok++; }
+    try{
+      const res=await parsePDF(pdfs[i]);
+      if(res.length>0){for(const m of res) measurements.push(m); ok++; totalM+=res.length;}
+      else fail++;
+    }
     catch(e){ console.warn('Error al parsear',pdfs[i].name,e); fail++; }
   }
   measurements.sort((a,b)=>parseDT(a.datetime)-parseDT(b.datetime));
   showOverlay(false);
   updateMeasurementList();
   const badge=document.getElementById('pdf-count-badge');
+  const mLabel=totalM!==ok?` · ${totalM} mediciones`:'';
   badge.textContent=`${ok} PDF${ok!==1?'s':''}`;
   badge.style.display='';
-  setStatus(`${ok} PDF${ok!==1?'s':''} cargado${ok!==1?'s':''} correctamente${fail?` · ${fail} con error`:''}`);
-  showToast(`✅ ${ok} archivo${ok!==1?'s':''} cargado${ok!==1?'s':''} exitosamente${fail?` (${fail} con error)`:''}`);
+  setStatus(`${ok} PDF${ok!==1?'s':''} cargado${ok!==1?'s':''} correctamente${mLabel}${fail?` · ${fail} con error`:''}`);
+  showToast(`✅ ${ok} archivo${ok!==1?'s':''} cargado${ok!==1?'s':''} exitosamente${mLabel}${fail?` (${fail} con error)`:''}`);
   clearChartArea();
 }
 
@@ -1340,3 +1365,4 @@ document.getElementById('stats-arrow').classList.add('open');
 </script>
 </body>
 </html>
+

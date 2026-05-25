@@ -95,10 +95,10 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
 .meas-item.selected .mi-tag{background:rgba(194,213,0,.35);color:var(--lime)}
 
 /* Meta card */
-#meta-card{padding:9px 10px;border-top:3px solid var(--teal);font-size:10px;color:var(--muted);flex-shrink:0}
-#meta-title{font-family:'Barlow Condensed',sans-serif;font-weight:800;color:var(--navy);margin-bottom:5px;font-size:11px;letter-spacing:.5px;display:flex;align-items:center;gap:5px}
-.meta-row{display:flex;gap:4px;margin-bottom:2px;align-items:flex-start;font-size:10px}
-.meta-lbl{font-weight:600;color:var(--navy);min-width:76px;flex-shrink:0}
+#meta-card{padding:5px 8px;border-top:2px solid var(--teal);font-size:9px;color:var(--muted);flex-shrink:0}
+#meta-title{font-family:'Barlow Condensed',sans-serif;font-weight:800;color:var(--navy);margin-bottom:2px;font-size:10px;letter-spacing:.4px;display:flex;align-items:center;gap:4px}
+.meta-row{display:flex;gap:3px;margin-bottom:1px;align-items:flex-start;font-size:9px;line-height:1.3}
+.meta-lbl{font-weight:600;color:var(--navy);min-width:64px;flex-shrink:0}
 .meta-val{color:var(--navy)}
 .obsc-ok{color:var(--teal);font-weight:700}
 .obsc-warn{color:var(--yellow);font-weight:700}
@@ -128,6 +128,44 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
 #stats-arrow.open{transform:rotate(180deg)}
 #stats-content{max-height:0;overflow:hidden;transition:max-height .3s ease}
 #stats-content.open{max-height:180px}
+
+/* ─── Comparison panel ─── */
+#comp-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);flex-shrink:0;overflow:hidden;box-shadow:var(--shadow)}
+#comp-toggle{background:#1a2660;color:#fff;padding:7px 16px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;letter-spacing:.6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none}
+#comp-toggle:hover{filter:brightness(1.1)}
+#comp-arrow{transition:transform .2s;font-size:9px;color:var(--lime)}
+#comp-content{max-height:0;overflow:hidden;transition:max-height .35s ease}
+#comp-content.open{max-height:340px;overflow-y:auto}
+#comp-inner{padding:10px 12px}
+.comp-section{margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:12px}
+.comp-section:last-child{border-bottom:none;margin-bottom:0}
+.comp-meas-title{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;color:var(--navy);margin-bottom:8px}
+.comp-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px}
+.comp-table th{background:#F1F5F9;color:var(--navy);font-family:'Barlow Condensed',sans-serif;font-weight:700;padding:3px 7px;text-align:left;border:1px solid var(--border)}
+.comp-table td{padding:3px 7px;border:1px solid #e8edf2;line-height:1.3}
+.comp-table tr.row-bad td{background:#FEF2F2}
+.comp-table tr.row-warn td{background:#FFFBEB}
+.stt-ok{color:var(--teal);font-weight:700}
+.stt-warn{color:#B45309;font-weight:700}
+.stt-bad{color:var(--red);font-weight:700}
+.comp-recs-title{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:800;color:var(--navy);margin:6px 0 4px}
+.crec{font-size:10px;color:var(--navy);padding:4px 8px;margin-bottom:3px;border-left:3px solid #CBD5E1;background:#F8FAFC;border-radius:0 3px 3px 0}
+.crec.r{border-color:var(--red);background:#FEF2F2}
+.crec.y{border-color:#D97706;background:#FFFBEB}
+.crec.g{border-color:var(--teal);background:#F0FFF9}
+.crec.p{border-color:#7C3AED;background:#F5F3FF}
+.base-badge{background:var(--navy);color:var(--lime);font-family:'Barlow Condensed',sans-serif;font-size:8px;padding:1px 5px;border-radius:8px;font-weight:800;letter-spacing:.3px;margin-left:3px}
+.base-btn{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;cursor:pointer;border:none;background:transparent;font-size:12px;transition:transform .1s;flex-shrink:0;padding:0;line-height:1;vertical-align:middle}
+.base-btn:hover{transform:scale(1.2)}
+.meas-item.is-base{border-left:3px solid #F59E0B}
+.meas-item.is-base:not(.selected){background:#FFFBEB}
+#base-external-card{background:#FFF9EB;border:1.5px solid #F59E0B;border-radius:5px;padding:6px 9px;display:none;margin-bottom:4px}
+#base-external-card.visible{display:block}
+.bec-label{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:800;color:#B45309;letter-spacing:.3px;margin-bottom:2px;display:flex;align-items:center;gap:4px}
+.bec-name{font-size:10px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.bec-clear{border:none;background:#F59E0B;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;cursor:pointer;letter-spacing:.3px}
+.bec-clear:hover{background:#D97706}
+.mi-row{display:flex;justify-content:space-between;align-items:flex-start;gap:3px}
 #stats-inner{padding:8px 10px;overflow-x:auto}
 .stats-table{width:100%;border-collapse:collapse;font-size:10px;min-width:600px}
 .stats-table th{background:var(--navy);color:#fff;padding:5px 8px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;white-space:nowrap;letter-spacing:.3px}
@@ -180,8 +218,10 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
 <div id="loader-bar">
   <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" style="display:none">
   <input type="file" id="fileInput" multiple accept=".pdf" style="display:none">
+  <input type="file" id="basePdfInput" accept=".pdf" style="display:none">
   <button class="lbtn lbtn-primary" onclick="document.getElementById('folderInput').click()">📂 Abrir carpeta</button>
   <button class="lbtn lbtn-sec"     onclick="document.getElementById('fileInput').click()">📄 Seleccionar PDFs</button>
+  <button class="lbtn" style="background:#F59E0B;color:#fff" onclick="document.getElementById('basePdfInput').click()" title="Cargar un PDF externo como curva de referencia base">★ PDF Base</button>
   <span id="pdf-count-badge"></span>
   <span id="status-text">Sin datos cargados — abre una carpeta con reportes Malvern en PDF</span>
   <button class="lbtn lbtn-gold"   onclick="generateReport()" title="Generar reporte PDF de las mediciones seleccionadas">📋 Generar reporte PDF</button>
@@ -204,6 +244,11 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
           <button class="sbtn" onclick="selectAll()">Todas</button>
           <button class="sbtn" onclick="clearSelection()">Ninguna</button>
         </div>
+      </div>
+      <div id="base-external-card">
+        <div class="bec-label">★ BASE EXTERNA</div>
+        <div class="bec-name" id="bec-name-text">—</div>
+        <button class="bec-clear" onclick="clearExternalBase()">✕ Quitar base externa</button>
       </div>
       <div id="measurementList">
         <div class="empty-chart" style="padding:20px;text-align:center;gap:4px">
@@ -252,9 +297,22 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
         <span>📐 PARÁMETROS GRANULOMÉTRICOS — <span id="stats-summary" style="font-weight:400;opacity:.8">Selecciona mediciones para ver parámetros</span></span>
         <span id="stats-arrow">▲</span>
       </div>
-      <div id="stats-content" class="open">
+      <div id="stats-content">
         <div id="stats-inner">
           <div style="font-size:10px;color:var(--text-light);padding:6px 4px">Los parámetros D10, D50, D90, Span y Q3 en mallas estándar se calcularán automáticamente al seleccionar mediciones.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison panel -->
+    <div id="comp-panel" style="display:none">
+      <div id="comp-toggle" onclick="toggleComp()">
+        <span>🔬 ANÁLISIS COMPARATIVO — <span id="comp-summary" style="font-weight:400;opacity:.8">Establece una medición BASE para comparar</span></span>
+        <span id="comp-arrow">▲</span>
+      </div>
+      <div id="comp-content">
+        <div id="comp-inner">
+          <div style="font-size:10px;color:var(--text-light);padding:6px 4px">Marca una medición como ★ BASE y selecciona otras para ver análisis comparativo automático.</div>
         </div>
       </div>
     </div>
@@ -302,9 +360,11 @@ const PLOTLY_CFG = {responsive:true, displayModeBar:true, displaylogo:false,
 // ────────────────────────────────────────────────────────────
 let measurements      = [];
 let selectedSet       = new Set();
-let statsOpen         = true;
+let statsOpen         = false;
 let lastChartType     = null;
 let lastStatsIndices  = [];
+let baseIndex         = null;
+let baseMeasurementExternal = null;
 
 // ────────────────────────────────────────────────────────────
 // UTILIDADES
@@ -429,6 +489,8 @@ function extractTableData(lines) {
 function detectFormat(lines) {
   for(const line of lines){
     if(line.includes('CILAS')||line.includes('Valores acumulados característicos')) return 'cilas';
+    // Anton Paar debe detectarse antes de Malvern: su cabecera también tiene "Tamaño inferior"
+    if(line.includes('Anton Paar')||line.includes('PSA 1090')) return 'antonpaar';
     if(line.includes('Mastersizer')||line.includes('Tamaño inferior')||
        line.includes('Distribución de tamaño de partícula por volumen')) return 'malvern';
   }
@@ -437,6 +499,55 @@ function detectFormat(lines) {
     if(/^x\s+[\d.,]/.test(line.trim())||/^Q3\s+[\d.,]/.test(line.trim())) return 'cilas';
   }
   return 'malvern';
+}
+
+// ── Metadata Anton Paar ─────────────────────────────────────
+function extractAntonPaarMetadata(lines) {
+  const meta={measurementName:'',user:'',datetime:'',comment:'',obscuration:NaN};
+  function vb(text,a,b){
+    const ia=text.indexOf(a); if(ia===-1) return null;
+    const s=ia+a.length, ib=b?text.indexOf(b,s):-1;
+    const raw=(ib===-1?text.slice(s):text.slice(s,ib)).trim();
+    return(raw==='-'||raw==='')?'':raw;
+  }
+  for(const line of lines){
+    if(line.includes('Nombre de la medición')&&!meta.measurementName){
+      const v=vb(line,'Nombre de la medición','Usuario'); if(v!==null) meta.measurementName=v;
+    }
+    if(line.includes('Usuario')&&!meta.user){
+      const v=vb(line,'Usuario','Hora de inicio'); if(v!==null) meta.user=v;
+    }
+    if(line.includes('Hora de inicio')&&!meta.datetime){
+      const v=vb(line,'Hora de inicio',null); if(v!==null) meta.datetime=v;
+    }
+    if(line.includes('Comentario')&&!meta.comment){
+      const v=vb(line,'Comentario',null); if(v!==null) meta.comment=v;
+    }
+  }
+  return meta;
+}
+
+// ── Tabla Anton Paar ────────────────────────────────────────
+function extractAntonPaarTableData(lines) {
+  const xV=[],q3V=[],Q3V=[];
+  let inTable=false;
+  for(const line of lines){
+    if(line.includes('Distribución - Volumen Tamaño inferior')){inTable=true;continue;}
+    if(!inTable) continue;
+    const t=line.trim();
+    // Filas de datos: empiezan con dígito y no contienen letras
+    if(!/^[\d.]/.test(t)||/[a-zA-Z]/.test(t)) continue;
+    const nums=t.match(/[\d.]+/g)?.map(Number)??[];
+    for(let i=0;i+2<nums.length;i+=3){
+      if(!isNaN(nums[i])&&!isNaN(nums[i+1])&&!isNaN(nums[i+2])){
+        xV.push(nums[i]); q3V.push(nums[i+1]); Q3V.push(nums[i+2]);
+      }
+    }
+  }
+  const Q3=[],q3=[];
+  for(let i=0;i<xV.length;i++){Q3.push({x:xV[i],y:Q3V[i]});q3.push({x:xV[i],y:q3V[i]});}
+  const byX=(a,b)=>a.x-b.x; Q3.sort(byX); q3.sort(byX);
+  return{Q3,q3};
 }
 
 // ── Metadata CILAS ──────────────────────────────────────────
@@ -548,8 +659,8 @@ async function parsePDF(file) {
     const fmt=detectFormat(seg);
     // Omitir páginas CILAS sin tabla completa (solo "definidos por el usuario")
     if(fmt==='cilas'&&!seg.some(l=>l.includes('Valores acumulados característicos'))) continue;
-    const meta=fmt==='cilas'?extractCilasMetadata(seg):extractMetadata(seg);
-    const{Q3,q3}=fmt==='cilas'?extractCilasTableData(seg):extractTableData(seg);
+    const meta=fmt==='cilas'?extractCilasMetadata(seg):fmt==='antonpaar'?extractAntonPaarMetadata(seg):extractMetadata(seg);
+    const{Q3,q3}=fmt==='cilas'?extractCilasTableData(seg):fmt==='antonpaar'?extractAntonPaarTableData(seg):extractTableData(seg);
     if(Q3.length===0&&q3.length===0) continue;
     results.push({...meta,filename:file.name,Q3,q3,_format:fmt});
   }
@@ -625,6 +736,296 @@ function calcStats(m) {
 }
 
 // ────────────────────────────────────────────────────────────
+// BASE Y ANÁLISIS COMPARATIVO
+// ────────────────────────────────────────────────────────────
+function getBaseMeasurement() {
+  if(baseMeasurementExternal) return baseMeasurementExternal;
+  if(baseIndex!==null&&measurements[baseIndex]) return measurements[baseIndex];
+  return null;
+}
+
+function setBase(idx, e) {
+  if(e){e.stopPropagation();e.preventDefault();}
+  baseIndex=(baseIndex===idx)?null:idx;
+  // Clear external base when setting an internal one
+  if(baseIndex!==null&&baseMeasurementExternal){
+    baseMeasurementExternal=null;
+    document.getElementById('base-external-card').classList.remove('visible');
+    document.getElementById('bec-name-text').textContent='—';
+  }
+  updateMeasurementList();
+  const panel=document.getElementById('comp-panel');
+  panel.style.display='';
+  if(baseIndex===null&&!baseMeasurementExternal){
+    document.getElementById('comp-summary').textContent='Establece una medición BASE para comparar';
+    document.getElementById('comp-inner').innerHTML='<div style="font-size:10px;color:var(--text-light);padding:6px 4px">Marca una medición como ★ BASE y selecciona otras para análisis comparativo.</div>';
+  } else {
+    redrawCurrentChart();
+  }
+}
+
+function toggleComp(){
+  const c=document.getElementById('comp-content');
+  const a=document.getElementById('comp-arrow');
+  c.classList.toggle('open');
+  a.style.transform=c.classList.contains('open')?'rotate(180deg)':'';
+}
+
+function redrawCurrentChart(){
+  const sel=getSelected();
+  if(!lastChartType||!sel.length) return;
+  if(lastChartType==='histograma') plotHistograma(sel);
+  else if(lastChartType==='q3') plotQ3Comparison(sel);
+  else if(lastChartType==='q3_density') plotq3Comparison(sel);
+  else if(lastChartType==='historico') doHistorico();
+  else if(lastChartType==='d50historico') doD50Historico();
+}
+
+async function loadBasePdf(file) {
+  showOverlay(true); setLoadingMsg('Cargando PDF base externo…', file.name);
+  try {
+    const res=await parsePDF(file);
+    if(!res.length){ showToast('⚠ No se pudo extraer datos del PDF base.'); showOverlay(false); return; }
+    baseMeasurementExternal=res[0];
+    baseMeasurementExternal._externalFile=file.name;
+    baseIndex=null; // deselect any internal base
+    updateMeasurementList();
+    document.getElementById('base-external-card').classList.add('visible');
+    document.getElementById('bec-name-text').textContent=baseMeasurementExternal.measurementName||file.name;
+    document.getElementById('comp-panel').style.display='';
+    const {date:bd}=fmtDT(baseMeasurementExternal.datetime);
+    document.getElementById('comp-summary').textContent=`BASE EXTERNA: ${baseMeasurementExternal.measurementName||file.name}${bd?' ('+bd+')':''}`;
+    showToast(`✅ PDF base cargado: ${baseMeasurementExternal.measurementName||file.name}`);
+    redrawCurrentChart();
+  } catch(err) {
+    console.error('Error cargando PDF base',err);
+    showToast('⚠ Error al procesar el PDF base.');
+  }
+  showOverlay(false);
+}
+
+function clearExternalBase() {
+  baseMeasurementExternal=null;
+  document.getElementById('base-external-card').classList.remove('visible');
+  document.getElementById('bec-name-text').textContent='—';
+  if(baseIndex===null){
+    document.getElementById('comp-panel').style.display='none';
+    document.getElementById('comp-summary').textContent='Establece una medición BASE para comparar';
+    document.getElementById('comp-inner').innerHTML='<div style="font-size:10px;color:var(--text-light);padding:6px 4px">Marca una medición como ★ BASE y selecciona otras para análisis comparativo.</div>';
+  }
+  redrawCurrentChart();
+}
+
+function calcRRB(Q3data) {
+  const pts=Q3data.filter(p=>p.y>5&&p.y<95&&p.x>0);
+  if(pts.length<3) return{n:NaN,xp:NaN};
+  const X=pts.map(p=>Math.log(p.x));
+  const Y=pts.map(p=>Math.log(-Math.log(1-p.y/100)));
+  const n2=X.length;
+  const sX=X.reduce((a,b)=>a+b,0), sY=Y.reduce((a,b)=>a+b,0);
+  const sXY=X.reduce((s,x,i)=>s+x*Y[i],0), sXX=X.reduce((s,x)=>s+x*x,0);
+  const denom=n2*sXX-sX*sX;
+  if(Math.abs(denom)<1e-12) return{n:NaN,xp:NaN};
+  const slope=(n2*sXY-sX*sY)/denom;
+  const intercept=(sY-slope*sX)/n2;
+  return{n:slope,xp:Math.exp(-intercept/slope)};
+}
+
+function calcCompMetrics(m) {
+  const st=calcStats(m);
+  const q3v=x=>getValueAtDiameter(m.Q3,x);
+  const flt3=q3v(3);
+  const f3_30=q3v(30)-flt3;
+  const f30_60=q3v(60)-q3v(30);
+  const fgt60=100-q3v(60);
+  const r45=100-q3v(45);
+  const rrb=calcRRB(m.Q3);
+  const skew=(st.d90-st.d10)>0?(st.d90+st.d10-2*st.d50)/(st.d90-st.d10):0;
+  const auc=calcTrapezoidArea(m.q3,3,30);
+  const ui=(!isNaN(rrb.xp)&&(st.d90-st.d10)>0)?rrb.xp/(st.d90-st.d10):NaN;
+  return{d10:st.d10,d50:st.d50,d90:st.d90,span:st.span,
+         flt3,f3_30,f30_60,fgt60,r45,
+         rrb_n:rrb.n,rrb_xp:rrb.xp,skew,auc,ui};
+}
+
+function detectBimodality(q3data) {
+  if(q3data.length<7) return false;
+  let peaks=0,lastPeakIdx=-1;
+  for(let i=2;i<q3data.length-2;i++){
+    const y=q3data[i].y, yp=q3data[i-1].y, yn=q3data[i+1].y;
+    if(y>yp&&y>yn&&y>0.05){
+      if(peaks>0){
+        const valley=Math.min(...q3data.slice(lastPeakIdx+1,i).map(d=>d.y));
+        if(valley<y*0.6) peaks++;
+      } else peaks++;
+      lastPeakIdx=i;
+    }
+  }
+  return peaks>=2;
+}
+
+function findCrossovers(baseQ3,otherQ3){
+  const xs=[];
+  const allX=[...baseQ3,...otherQ3].map(p=>p.x).filter(x=>x>0).sort((a,b)=>a-b);
+  const uniq=[...new Set(allX.map(x=>+x.toPrecision(4)))];
+  let prev=null;
+  for(const x of uniq){
+    const bY=getValueAtDiameter(baseQ3,x);
+    const oY=getValueAtDiameter(otherQ3,x);
+    const diff=oY-bY;
+    if(prev!==null&&Math.sign(diff)!==Math.sign(prev)&&Math.abs(diff)>0.3) xs.push({x,dir:diff>0?'actual>base':'actual<base'});
+    prev=diff;
+  }
+  return xs;
+}
+
+function buildComparisonPanel(indices){
+  const base=getBaseMeasurement();
+  if(!base){
+    document.getElementById('comp-panel').style.display='';
+    return;
+  }
+  const panel=document.getElementById('comp-panel');
+  panel.style.display='';
+  // External base → compare all selected; internal base → exclude the base index from targets
+  const compareTargets=baseMeasurementExternal?indices:indices.filter(i=>i!==baseIndex);
+  const bM=calcCompMetrics(base);
+  const {date:bd,time:bt}=fmtDT(base.datetime);
+  if(!baseMeasurementExternal){
+    document.getElementById('comp-summary').textContent=`BASE: ${base.measurementName||base.filename} (${bd})`;
+  }
+
+  if(!compareTargets.length){
+    document.getElementById('comp-inner').innerHTML='<div style="font-size:10px;color:var(--text-light);padding:6px 4px">Selecciona otras mediciones para comparar contra la base.</div>';
+    return;
+  }
+
+  const n=(v,dec=2)=>isNaN(v)?'—':v.toFixed(dec);
+  const sign=(d,u='')=>d>0?`+${d.toFixed(2)}${u}`:`${d.toFixed(2)}${u}`;
+
+  // Criteria rows: [id, label, unit, tol, sev-class, interp_pos, interp_neg, relTolPct?]
+  // tol=null → relative % tolerance (relTolPct, default 8)
+  const CRIT=[
+    // ── Finura global ─────────────────────────────────────────
+    ['r45','Residuo 45 µm (R325)','pp',2,'y',
+     'Aumento → mayor fracción inerte; pérdida de reactividad a 28 d.',
+     'Reducción extrema → mayor consumo energético sin beneficio proporcional.'],
+    ['d10','d₁₀','µm',0.5,'g',
+     'Aumento → déficit de partículas ultrafinas reactivas.',
+     'Descenso marcado → sobre-molienda de finos; riesgo de retracción.'],
+    ['d50','d₅₀','µm',2,'r',
+     'Aumento → molienda más gruesa. Verificar apertura de separador y carga de bolas. Variación > ±3 µm indica cambio significativo de operación.',
+     'Descenso → molienda más fina. Revisar tasa de alimentación o velocidad de separador.'],
+    ['d90','d₉₀','µm',5,'y',
+     'Aumento → mayor fracción inerte a 28 d. Revisar desgaste de bolas.',
+     'Reducción extrema → separador a velocidad alta o con flujo de aire insuficiente.'],
+    // ── Forma de curva ────────────────────────────────────────
+    ['rrb_n','Pendiente RRB (n)','',0.08,'y',
+     'Distribución más estrecha → hidratación más uniforme.',
+     'Distribución más ancha → mejor empaquetamiento pero más partículas inertes.'],
+    ['rrb_xp','Tamaño RRB (x\')','µm',3,'y',
+     'Desplazamiento global hacia mayor tamaño → molienda más gruesa.',
+     'Desplazamiento global hacia menor tamaño → molienda más fina.'],
+    ['span','Span (d₉₀−d₁₀)/d₅₀','',0.4,'y',
+     'Aumento → distribución más dispersa; posible desgaste en separador.',
+     'Reducción → molienda más uniforme; verificar que no hay pérdida de finos.'],
+    ['skew','Asimetría de curva','',0.2,'g',
+     'Cola hacia gruesos más pronunciada; revisar separación del separador o alimentación.',
+     'Menor asimetría; distribución más centrada.'],
+    // ── Fracción ──────────────────────────────────────────────
+    ['flt3','Fracción < 3 µm','pp',3,'y',
+     'Exceso → mayor demanda de agua, retracción y calor de hidratación elevado.',
+     'Déficit → reducción de reactividad muy temprana (< 4 h).'],
+    ['f3_30','Fracción 3–30 µm','pp',5,'r',
+     'Aumento → mayor eficiencia de molienda en zona noble.',
+     'Reducción → pérdida de desempeño mecánico. La zona noble disminuyó.'],
+    ['f30_60','Fracción 30–60 µm','pp',5,'y',
+     'Aumento excesivo → posible molienda gruesa o separador con velocidad de rotor baja.',
+     'Reducción → menor aporte a resistencias tardías (28 d).'],
+    ['fgt60','Fracción > 60 µm','pp',2,'r',
+     'Aumento comparativo → fracción prácticamente inerte a 28 d. Negativo siempre.',
+     'Reducción → favorable; menor fracción inerte.'],
+    // ── Proceso ───────────────────────────────────────────────
+    ['auc','Área q3 (3–30 µm)','',null,'y',
+     'Aumento → mayor contribución integral de la zona noble.',
+     'Descenso → pérdida de zona noble; correlaciona con pérdida de resistencia compresiva.',8],
+    ['ui','Índice uniformidad RRB (UI)','',null,'g',
+     'Aumento → mayor selectividad del separador dinámico.',
+     'Descenso → menor selectividad del separador dinámico.',5],
+  ];
+
+  let html='';
+  for(const cidx of compareTargets){
+    const m=measurements[cidx];
+    const cM=calcCompMetrics(m);
+    const bimodal=detectBimodality(m.q3);
+    const crosses=findCrossovers(base.Q3,m.Q3);
+    const {date,time}=fmtDT(m.datetime);
+
+    // Build criteria rows
+    const rows=CRIT.map((critRow)=>{
+      const [id,lbl,unit,tol,sev,iPos,iNeg,relTolPct=8]=critRow;
+      const bv=bM[id], cv=cM[id];
+      if(isNaN(bv)||isNaN(cv)) return '';
+      const d=cv-bv;
+      let status='ok', rowCls='';
+      if(tol!==null){
+        if(Math.abs(d)>tol*1.4){status='bad';rowCls='row-bad';}
+        else if(Math.abs(d)>tol){status='warn';rowCls='row-warn';}
+      } else {
+        const pct=Math.abs(d)/Math.abs(bv)*100;
+        if(pct>relTolPct*1.5){status='bad';rowCls='row-bad';}
+        else if(pct>relTolPct){status='warn';rowCls='row-warn';}
+      }
+      const stLbl=status==='ok'?`<span class="stt-ok">✓</span>`:status==='warn'?`<span class="stt-warn">⚠</span>`:`<span class="stt-bad">✗</span>`;
+      const unitDisp=unit?` ${unit}`:'';
+      const tolDisp=tol!==null?`±${tol}${unitDisp}`:`±${relTolPct}%`;
+      return `<tr class="${rowCls}"><td>${lbl}</td><td>${n(bv)}${unitDisp}</td><td>${n(cv)}${unitDisp}</td><td>${sign(d,unitDisp.trimStart())}</td><td>${tolDisp}</td><td>${stLbl}</td></tr>`;
+    }).join('');
+
+    // Recommendations
+    const recs=[];
+    for(const critRow of CRIT){
+      const [id,lbl,unit,tol,sev,iPos,iNeg,relTolPct=8]=critRow;
+      const bv=bM[id], cv=cM[id];
+      if(isNaN(bv)||isNaN(cv)) continue;
+      const d=cv-bv;
+      let bad=false;
+      if(tol!==null) bad=Math.abs(d)>tol;
+      else bad=Math.abs(d)/Math.abs(bv)*100>relTolPct;
+      if(bad){
+        const sevCls=sev==='r'?'r':sev==='y'?'y':'g';
+        const icon=sev==='r'?'🔴':sev==='y'?'🟡':'🟢';
+        const msg=d>0?iPos:iNeg;
+        const deltaStr=sign(d,unit?` ${unit}`:'');
+        recs.push(`<div class="crec ${sevCls}">${icon} <b>${lbl}</b> Δ${deltaStr}: ${msg}</div>`);
+      }
+    }
+    if(bimodal) recs.push(`<div class="crec r">🔴 <b>Bimodalidad</b>: Se detecta joroba en la curva de densidad. Posible mezcla deficiente entre cámaras o producto mezclado de dos fuentes. Verificar estado del clasificador y alimentación.</div>`);
+    if(crosses.length){
+      crosses.forEach(cr=>{
+        const dirMsg=cr.dir==='actual>base'
+          ?'la muestra actual es MÁS FINA debajo de ese diámetro y más gruesa por encima'
+          :'la muestra actual es MÁS GRUESA debajo de ese diámetro y más fina por encima';
+        recs.push(`<div class="crec p">🟣 <b>Cruce de curvas</b> en Ø ${cr.x} µm: ${dirMsg}. Evaluar impacto por fracción.</div>`);
+      });
+    }
+    if(!recs.length) recs.push(`<div class="crec g">✅ Todos los parámetros dentro de tolerancia respecto a la base.</div>`);
+
+    html+=`<div class="comp-section">
+      <div class="comp-meas-title">vs. ${m.measurementName||m.filename} <span style="font-weight:400;font-size:10px;opacity:.7">${date} ${time}</span></div>
+      <table class="comp-table">
+        <thead><tr><th>Parámetro</th><th>Base</th><th>Actual</th><th>Δ</th><th>Tolerancia</th><th>Est.</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="comp-recs-title">Recomendaciones</div>
+      ${recs.join('')}
+    </div>`;
+  }
+  document.getElementById('comp-inner').innerHTML=html;
+}
+
+// ────────────────────────────────────────────────────────────
 // CONFIGURACIÓN DE EJES (reutilizable)
 // ────────────────────────────────────────────────────────────
 const xAxisCfg={
@@ -691,6 +1092,18 @@ function plotHistograma(indices) {
       });
     }
 
+    // Add base Q3 curve overlay when in multi mode and base is set
+    const _bm=getBaseMeasurement();
+    if(multi&&_bm&&(baseMeasurementExternal||!indices.includes(baseIndex))&&i===indices.length-1){
+      traces.push({
+        x:_bm.Q3.map(d=>d.x),y:_bm.Q3.map(d=>d.y),
+        type:'scatter',mode:'lines',
+        name:`★ BASE Q3: ${_bm.measurementName||_bm.filename||_bm._externalFile||'Base'}`,
+        line:{color:AZUL,width:3,dash:'dash'},yaxis:'y2',
+        hovertemplate:`BASE: ${_bm.measurementName||_bm.filename||'Base'}<br>Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>`
+      });
+    }
+
     // Líneas D50 (una por medición en multi; solo la primera en single)
     if(!multi||i===0){
       const dColor=multi?color:'rgba(11,45,107,0.6)';
@@ -729,6 +1142,7 @@ function plotHistograma(indices) {
   lastChartType='histograma';
   Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
   updateStatsPanel(indices);
+  buildComparisonPanel(indices);
 }
 
 function plotQ3Comparison(indices) {
@@ -744,6 +1158,19 @@ function plotQ3Comparison(indices) {
       hovertemplate:`${m.measurementName||m.filename}<br>Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>`
     };
   });
+  // Add base curve if set and not in current selection
+  const _bm=getBaseMeasurement();
+  if(_bm&&(baseMeasurementExternal||!indices.includes(baseIndex))){
+    const bq45=resolveQ3at45(_bm.Q3);
+    const bName=_bm.measurementName||_bm.filename||_bm._externalFile||'Base';
+    traces.unshift({
+      x:_bm.Q3.map(d=>d.x),y:_bm.Q3.map(d=>d.y),
+      type:'scatter',mode:'lines',
+      name:`★ BASE: ${bName}<br>Q3@${bq45.label}µm: ${bq45.value.toFixed(1)}%`,
+      line:{color:AZUL,width:3,dash:'dash'},
+      hovertemplate:`BASE: ${bName}<br>Ø %{x} µm<br>Q3: %{y:.1f}%<extra></extra>`
+    });
+  }
   const layout={
     ...baseLayout,
     title:{text:'COMPARACIÓN x vs Q3 (acumulada)',font:{size:12,color:AZUL},pad:{t:5}},
@@ -757,6 +1184,7 @@ function plotQ3Comparison(indices) {
   lastChartType='q3';
   Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
   updateStatsPanel(indices);
+  buildComparisonPanel(indices);
 }
 
 function plotq3Comparison(indices) {
@@ -782,6 +1210,18 @@ function plotq3Comparison(indices) {
       hovertemplate:`${m.measurementName||m.filename}<br>Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>`
     });
   });
+  // Add base q3 curve when base is set and not in selection
+  const _bm=getBaseMeasurement();
+  if(_bm&&(baseMeasurementExternal||!indices.includes(baseIndex))){
+    const bName=_bm.measurementName||_bm.filename||_bm._externalFile||'Base';
+    traces.unshift({
+      x:_bm.q3.map(d=>d.x),y:_bm.q3.map(d=>d.y),
+      type:'scatter',mode:'lines',
+      name:`★ BASE q3: ${bName}`,
+      line:{color:AZUL,width:3,dash:'dash'},
+      hovertemplate:`BASE: ${bName}<br>Ø %{x} µm<br>q3: %{y:.4f}<extra></extra>`
+    });
+  }
   const layout={
     ...baseLayout,
     title:{text:'COMPARACIÓN x vs q3 (densidad)',font:{size:12,color:AZUL},pad:{t:5}},
@@ -795,10 +1235,14 @@ function plotq3Comparison(indices) {
   lastChartType='q3_density';
   Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
   updateStatsPanel(indices);
+  buildComparisonPanel(indices);
 }
 
 function plotHistorico(indices) {
-  const sorted=[...indices].sort((a,b)=>parseDT(measurements[a].datetime)-parseDT(measurements[b].datetime));
+  const sorted=[...indices].sort((a,b)=>{
+    const d=parseDT(measurements[b].datetime)-parseDT(measurements[a].datetime);
+    return isNaN(d)?b-a:d;
+  });
   const labels=[],yVals=[],hoverTxts=[];
   for(const idx of sorted){
     const m=measurements[idx];
@@ -843,7 +1287,10 @@ function plotHistorico(indices) {
 function doD50Historico() {
   const sel=getSelected();
   if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
-  const sorted=[...sel].sort((a,b)=>parseDT(measurements[a].datetime)-parseDT(measurements[b].datetime));
+  const sorted=[...sel].sort((a,b)=>{
+    const d=parseDT(measurements[b].datetime)-parseDT(measurements[a].datetime);
+    return isNaN(d)?b-a:d;
+  });
   const labels=[],d50s=[],d10s=[],d90s=[],spans=[];
   for(const idx of sorted){
     const m=measurements[idx], st=calcStats(m);
@@ -885,7 +1332,7 @@ function doD50Historico() {
   setChartLabel('Histórico D10 · D50 · D90 · Span',sorted.length);
   lastChartType='d50historico';
   Plotly.newPlot('chart',traces,layout,PLOTLY_CFG);
-  updateStatsPanel(sel);
+  updateStatsPanel(sorted);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -948,7 +1395,6 @@ function updateStatsPanel(indices) {
     <tbody>${rows}</tbody>
   </table>`;
   summary.textContent=`${indices.length} medición${indices.length!==1?'es':''} seleccionada${indices.length!==1?'s':''}`;
-  if(!statsOpen) toggleStats();
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1215,7 +1661,7 @@ async function loadFiles(fileList) {
   const pdfs=Array.from(fileList).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
   if(!pdfs.length){showToast('⚠ No se encontraron archivos PDF en la selección.');return;}
   showOverlay(true);
-  measurements=[]; selectedSet.clear();
+  measurements=[]; selectedSet.clear(); baseIndex=null;
   let ok=0, fail=0, totalM=0;
   for(let i=0;i<pdfs.length;i++){
     setLoadingMsg(`Procesando ${i+1} / ${pdfs.length}`,pdfs[i].name);
@@ -1252,11 +1698,17 @@ function updateMeasurementList() {
   }
   measurements.forEach((m,i)=>{
     const div=document.createElement('div');
-    div.className='meas-item'+(selectedSet.has(i)?' selected':'');
     const{date,time}=fmtDT(m.datetime);
     const oscTag=!isNaN(m.obscuration)?`<span class="mi-tag">Osc. ${m.obscuration.toFixed(1)}%</span>`:'';
-    const fmtTag=m._format==='cilas'?`<span class="mi-tag" style="background:rgba(0,181,128,.25);color:#00B580">CILAS</span>`:`<span class="mi-tag">Malvern</span>`;
-    div.innerHTML=`<div class="mi-date">${date} ${time}</div>
+    const fmtTag=m._format==='cilas'
+      ?`<span class="mi-tag" style="background:rgba(0,181,128,.25);color:#00B580">CILAS</span>`
+      :m._format==='antonpaar'
+      ?`<span class="mi-tag" style="background:rgba(194,213,0,.35);color:#6b7a00">Anton Paar</span>`
+      :`<span class="mi-tag">Malvern</span>`;
+    const isBase=baseIndex===i;
+    const baseBadge=isBase?`<span class="base-badge">BASE</span>`:'';
+    div.className='meas-item'+(selectedSet.has(i)?' selected':'')+(isBase?' is-base':'');
+    div.innerHTML=`<div class="mi-row"><span><span class="mi-date">${date} ${time}</span>${baseBadge}</span><button class="base-btn${isBase?' active':''}" title="${isBase?'Quitar base':'Fijar como base'}" onclick="setBase(${i},event)">${isBase?'★':'☆'}</button></div>
       <div class="mi-name">${m.measurementName||m.filename}</div>
       ${m.comment?`<div class="mi-comment">${m.comment}</div>`:''}
       <div style="display:flex;gap:3px;flex-wrap:wrap">${oscTag}${fmtTag}</div>`;
@@ -1333,6 +1785,7 @@ function doHistorico() {
 // ────────────────────────────────────────────────────────────
 document.getElementById('folderInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
 document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
+document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.target.files[0])loadBasePdf(e.target.files[0]);e.target.value='';});
 
 // Fecha en header
 (function(){
@@ -1340,8 +1793,7 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
   document.getElementById('header-date').textContent=d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
 })();
 
-// Estadísticas abiertas por defecto
-document.getElementById('stats-arrow').classList.add('open');
+// Paneles cerrados por defecto — se abren solo al hacer clic
 
 // ── Verificación de dependencias CDN ────────────────────────
 (function checkDeps(){

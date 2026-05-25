@@ -241,6 +241,8 @@ function extractTableData(lines) {
 function detectFormat(lines) {
   for (const line of lines) {
     if (line.includes('CILAS') || line.includes('Valores acumulados característicos')) return 'cilas';
+    // Anton Paar must be checked before Malvern: its table header also contains "Tamaño inferior"
+    if (line.includes('Anton Paar') || line.includes('PSA 1090')) return 'antonpaar';
     if (line.includes('Mastersizer') || line.includes('Tamaño inferior') ||
         line.includes('Distribución de tamaño de partícula por volumen')) return 'malvern';
   }
@@ -248,6 +250,78 @@ function detectFormat(lines) {
     if (/^x\s+[\d.,]/.test(line.trim()) || /^Q3\s+[\d.,]/.test(line.trim())) return 'cilas';
   }
   return 'malvern';
+}
+
+// ---------------------------------------------------------------------------
+// extractAntonPaarMetadata
+// ---------------------------------------------------------------------------
+function extractAntonPaarMetadata(lines) {
+  const meta = { measurementName: '', user: '', datetime: '', comment: '', obscuration: NaN };
+
+  function valueBetween(text, labelA, labelB) {
+    const idxA = text.indexOf(labelA);
+    if (idxA === -1) return null;
+    const start = idxA + labelA.length;
+    const idxB = labelB ? text.indexOf(labelB, start) : -1;
+    const raw = (idxB === -1 ? text.slice(start) : text.slice(start, idxB)).trim();
+    return raw === '-' || raw === '' ? '' : raw;
+  }
+
+  for (const line of lines) {
+    if (line.includes('Nombre de la medición') && meta.measurementName === '') {
+      // In Anton Paar layout, 'Usuario' is on the same visual line (right column)
+      const val = valueBetween(line, 'Nombre de la medición', 'Usuario');
+      if (val !== null) meta.measurementName = val;
+    }
+    if (line.includes('Usuario') && meta.user === '') {
+      const val = valueBetween(line, 'Usuario', 'Hora de inicio');
+      if (val !== null) meta.user = val;
+    }
+    if (line.includes('Hora de inicio') && meta.datetime === '') {
+      const val = valueBetween(line, 'Hora de inicio', null);
+      if (val !== null) meta.datetime = val;
+    }
+    if (line.includes('Comentario') && meta.comment === '') {
+      const val = valueBetween(line, 'Comentario', null);
+      if (val !== null) meta.comment = val;
+    }
+  }
+
+  return meta;
+}
+
+// ---------------------------------------------------------------------------
+// extractAntonPaarTableData
+// ---------------------------------------------------------------------------
+function extractAntonPaarTableData(lines) {
+  const xVals = [], q3Vals = [], Q3Vals = [];
+  let inTable = false;
+
+  for (const line of lines) {
+    if (line.includes('Distribución - Volumen Tamaño inferior')) { inTable = true; continue; }
+    if (!inTable) continue;
+    const t = line.trim();
+    // Skip column headers and footers — data rows start with a digit and contain no letters
+    if (!/^[\d.]/.test(t) || /[a-zA-Z]/.test(t)) continue;
+    const nums = t.match(/[\d.]+/g)?.map(Number) ?? [];
+    // Each group of 3 numbers: x, q3 (density), Q3 (cumulative)
+    for (let i = 0; i + 2 < nums.length; i += 3) {
+      if (!isNaN(nums[i]) && !isNaN(nums[i + 1]) && !isNaN(nums[i + 2])) {
+        xVals.push(nums[i]);
+        q3Vals.push(nums[i + 1]);
+        Q3Vals.push(nums[i + 2]);
+      }
+    }
+  }
+
+  const Q3 = [], q3 = [];
+  for (let i = 0; i < xVals.length; i++) {
+    Q3.push({ x: xVals[i], y: Q3Vals[i] });
+    q3.push({ x: xVals[i], y: q3Vals[i] });
+  }
+  const byX = (a, b) => a.x - b.x;
+  Q3.sort(byX); q3.sort(byX);
+  return { Q3, q3 };
 }
 
 // ---------------------------------------------------------------------------
@@ -306,8 +380,13 @@ function extractCilasTableData(lines) {
       t.slice(2).trim().match(/[\d.,]+/g)?.forEach(n => q3Vals.push(parseFloat(n.replace(',','.'))));
       continue;
     }
-    // Sub-format A: header "x Q3 q3" then one triplet per row
-    if (/^x\s+Q3\s+q3/.test(t)) { headerSeen = true; continue; }
+    // DQ3 = frecuencia relativa en CILAS 1064 (equivalente a q3)
+    if (/^DQ3\s+[\d.,]/.test(t)) {
+      t.slice(3).trim().match(/[\d.,]+/g)?.forEach(n => q3Vals.push(parseFloat(n.replace(',','.'))));
+      continue;
+    }
+    // Sub-format A: header "x Q3 q3" or "x Q3 DQ3" then one triplet per row
+    if (/^x\s+Q3\s+(?:q3|DQ3)/.test(t)) { headerSeen = true; continue; }
     if (headerSeen && /^[\d.,]/.test(t)) {
       const nums = t.match(/[\d.,]+/g);
       if (nums && nums.length >= 2) {
@@ -360,21 +439,42 @@ async function parsePDF(file) {
   }
 
   const lines = groupIntoLines(allItems);
-  const fmt   = detectFormat(lines);
-  const meta  = fmt === 'cilas' ? extractCilasMetadata(lines)  : extractMetadata(lines);
-  const { Q3, q3 } = fmt === 'cilas' ? extractCilasTableData(lines) : extractTableData(lines);
 
-  return {
-    measurementName: meta.measurementName,
-    user: meta.user,
-    datetime: meta.datetime,
-    comment: meta.comment,
-    obscuration: meta.obscuration,
-    filename: file.name,
-    _format: fmt,
-    Q3,
-    q3,
-  };
+  // Split into per-measurement segments (multi-measurement PDFs)
+  const TITLE = 'DISTRIBUCION DEL TAMAÑO DE PARTICULAS';
+  const segments = [];
+  let current = [];
+  for (const line of lines) {
+    if (line.includes(TITLE) && current.length > 0) { segments.push(current); current = []; }
+    current.push(line);
+  }
+  if (current.length > 0) segments.push(current);
+
+  const results = [];
+  for (const seg of segments) {
+    const fmt = detectFormat(seg);
+    // Skip CILAS simplified-table pages (only "Valores acumulados definidos por el usuario")
+    if (fmt === 'cilas' && !seg.some(l => l.includes('Valores acumulados característicos'))) continue;
+    const meta = fmt === 'cilas'      ? extractCilasMetadata(seg)
+               : fmt === 'antonpaar' ? extractAntonPaarMetadata(seg)
+               : extractMetadata(seg);
+    const { Q3, q3 } = fmt === 'cilas'      ? extractCilasTableData(seg)
+                     : fmt === 'antonpaar' ? extractAntonPaarTableData(seg)
+                     : extractTableData(seg);
+    if (Q3.length === 0 && q3.length === 0) continue;
+    results.push({
+      measurementName: meta.measurementName,
+      user: meta.user,
+      datetime: meta.datetime,
+      comment: meta.comment,
+      obscuration: meta.obscuration,
+      filename: file.name,
+      _format: fmt,
+      Q3,
+      q3,
+    });
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,10 +482,10 @@ async function parsePDF(file) {
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parsePDF, detectFormat, groupIntoLines,
-    extractMetadata, extractCilasMetadata,
-    extractTableData, extractCilasTableData, extractPairs };
+    extractMetadata, extractCilasMetadata, extractAntonPaarMetadata,
+    extractTableData, extractCilasTableData, extractAntonPaarTableData, extractPairs };
 } else if (typeof window !== 'undefined') {
   window.granulometryParser = { parsePDF, detectFormat, groupIntoLines,
-    extractMetadata, extractCilasMetadata,
-    extractTableData, extractCilasTableData, extractPairs };
+    extractMetadata, extractCilasMetadata, extractAntonPaarMetadata,
+    extractTableData, extractCilasTableData, extractAntonPaarTableData, extractPairs };
 }

@@ -489,3 +489,4 @@ if (typeof module !== 'undefined' && module.exports) {
     extractMetadata, extractCilasMetadata, extractAntonPaarMetadata,
     extractTableData, extractCilasTableData, extractAntonPaarTableData, extractPairs };
 }
+

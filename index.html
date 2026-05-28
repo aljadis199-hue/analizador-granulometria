@@ -375,10 +375,14 @@ function hexToRgba(hex, a) {
 }
 function parseDT(s) {
   if(!s) return new Date(0);
-  // Formato dd/mm/yyyy [hh:mm[:ss][ ][AM|PM]] — Malvern/CILAS Colombia
+  // Formato dd/mm/yyyy o mm/dd/yyyy [hh:mm[:ss][ ][AM|PM]]
   const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?)?/i);
   if(m){
-    const day=+m[1],mon=+m[2]-1,yr=+m[3];
+    let day,mon;
+    const yr=+m[3];
+    // Si el segundo componente > 12 no puede ser mes → formato US MM/DD/YYYY
+    if(+m[2]>12){mon=+m[1]-1;day=+m[2];}
+    else{day=+m[1];mon=+m[2]-1;}
     let h=m[4]?+m[4]:0,mn=m[5]?+m[5]:0,sc=m[6]?+m[6]:0;
     const ap=(m[7]||'').toUpperCase();
     if(ap==='PM'&&h!==12) h+=12; else if(ap==='AM'&&h===12) h=0;
@@ -502,8 +506,9 @@ function extractTableData(lines) {
 function detectFormat(lines) {
   for(const line of lines){
     if(line.includes('CILAS')||line.includes('Valores acumulados característicos')) return 'cilas';
-    // Anton Paar debe detectarse antes de Malvern: su cabecera también tiene "Tamaño inferior"
     if(line.includes('Anton Paar')||line.includes('PSA 1090')) return 'antonpaar';
+    // Malvern inglés (v3.81 Analysis report) — detectar ANTES del Malvern español
+    if(line.includes('Operator Name')||line.includes('Laser Obscuration')||line.includes('% Volume In')) return 'malvern_en';
     if(line.includes('Mastersizer')||line.includes('Tamaño inferior')||
        line.includes('Distribución de tamaño de partícula por volumen')) return 'malvern';
   }
@@ -561,6 +566,130 @@ function extractAntonPaarTableData(lines) {
   for(let i=0;i<xV.length;i++){Q3.push({x:xV[i],y:Q3V[i]});q3.push({x:xV[i],y:q3V[i]});}
   const byX=(a,b)=>a.x-b.x; Q3.sort(byX); q3.sort(byX);
   return{Q3,q3};
+}
+
+// ── Metadata Malvern inglés (v3.81 Analysis report) ─────────
+function extractMalvernEnglishMetadata(lines) {
+  const meta={measurementName:'',user:'',datetime:'',comment:'',obscuration:NaN};
+  function vb(text,a,b){
+    const ia=text.indexOf(a); if(ia===-1) return null;
+    const s=ia+a.length,ib=b?text.indexOf(b,s):-1;
+    const raw=(ib===-1?text.slice(s):text.slice(s,ib)).trim();
+    return raw===''?null:raw;
+  }
+  for(const line of lines){
+    if(line.includes('Sample Name')&&!meta.measurementName){
+      let v=vb(line,'Sample Name','Measurement Date Time');
+      if(!v) v=vb(line,'Sample Name','SOP File Name');
+      if(!v) v=vb(line,'Sample Name',null);
+      if(v) meta.measurementName=v;
+    }
+    if(line.includes('Operator Name')&&!meta.user){
+      let v=vb(line,'Operator Name','Analysis Date Time');
+      if(!v) v=vb(line,'Operator Name',null);
+      if(v) meta.user=v;
+    }
+    if(!meta.datetime){
+      if(line.includes('Measurement Date Time')){const v=vb(line,'Measurement Date Time',null);if(v)meta.datetime=v;}
+      else if(line.includes('Analysis Date Time')){const v=vb(line,'Analysis Date Time',null);if(v)meta.datetime=v;}
+    }
+    if(isNaN(meta.obscuration)&&line.includes('Laser Obscuration')){
+      const mx=line.match(/Laser Obscuration\s+([\d.]+)\s*%/i);
+      if(mx) meta.obscuration=parseFloat(mx[1]);
+    }
+  }
+  return meta;
+}
+
+// ── Tabla Malvern inglés — % Volume In → q3; Q3 desde anclas ─
+function extractMalvernEnglishTableData(lines) {
+  const q3pts=[];
+  let d10=null,d50=null,d90=null,vBelow3=null,vRange3_30=null;
+  let inTable=false;
+
+  // Extrae el ÚLTIMO float en rango plausible de una línea que contiene el patrón.
+  // Usa el ÚLTIMO porque en "Dv (10) 0.817 µm" el subscript "10" aparece primero
+  // y el valor real "0.817" al final.
+  function grabFloat(line, pat, lo, hi) {
+    if(!pat.test(line)) return null;
+    const nums=(line.match(/\d+(?:\.\d+)?/g)||[]).map(Number).filter(v=>v>=lo&&v<=hi);
+    return nums.length?nums[nums.length-1]:null;
+  }
+
+  let span=null;
+  for(const line of lines){
+    // Patrones flexibles: acepta formato inglés variado, ignora unidades
+    if(!d10) d10=grabFloat(line,/Dv\s*[\(\[]\s*10\s*[\)\]]|D\s*v\s*10\b/i,0.05,15);
+    if(!d50) d50=grabFloat(line,/Dv\s*[\(\[]\s*50\s*[\)\]]|D\s*v\s*50\b/i,1,100);
+    if(!d90) d90=grabFloat(line,/Dv\s*[\(\[]\s*90\s*[\)\]]|D\s*v\s*90\b/i,5,1000);
+    // Span directamente de la sección Result
+    if(span===null) span=grabFloat(line,/^\s*Span\s*[\d.]/i,0.1,30);
+    if(span===null&&/\bSpan\b/i.test(line)&&!/Volume|Dv|D\[/i.test(line)){
+      span=grabFloat(line,/\bSpan\b/i,0.1,30);
+    }
+    if(vBelow3===null){
+      const m=line.match(/Volume Below\s*[\(\[]?\s*3\s*[\)\]]?[^%]*([\d]+\.[\d]+)\s*%/i);
+      if(m) vBelow3=parseFloat(m[1]);
+    }
+    if(vRange3_30===null){
+      const m=line.match(/Volume In Range\s*[\(\[]?\s*3[,\s]+30\s*[\)\]]?[^%]*([\d]+\.[\d]+)\s*%/i);
+      if(m) vRange3_30=parseFloat(m[1]);
+    }
+
+    if(line.includes('% Volume In')){inTable=true;continue;}
+    if(!inTable) continue;
+    // Parar cuando aparece texto (footer) tras haber recogido datos
+    if(q3pts.length>2&&/[a-zA-Z]/.test(line)) break;
+    const nums=line.match(/\d+(?:\.\d+)?/g)?.map(Number);
+    if(!nums||nums.length<2) continue;
+    for(let i=0;i+1<nums.length;i+=2){
+      const x=nums[i],y=nums[i+1];
+      if(x>0&&x<2000&&y>=0&&y<100) q3pts.push({x,y});
+    }
+  }
+  q3pts.sort((a,b)=>a.x-b.x);
+  console.info('[Malvern EN] Anchors:',{d10,d50,d90,vBelow3,vRange3_30},'| q3pts:',q3pts.length);
+
+  // Construir Q3 por reescalado por tramos entre anclas autoritativas
+  const anchors=[];
+  if(d10)  anchors.push({x:d10*0.05,y:0}); else anchors.push({x:0.05,y:0});
+  if(d10)  anchors.push({x:d10,y:10});
+  if(vBelow3!==null)  anchors.push({x:3.0,y:vBelow3});
+  if(d50)  anchors.push({x:d50,y:50});
+  if(vBelow3!==null&&vRange3_30!==null) anchors.push({x:30.0,y:vBelow3+vRange3_30});
+  if(d90)  anchors.push({x:d90,y:90});
+  anchors.push({x:d90?d90*5:1000,y:100});
+
+  // Filtrar anclas que rompan la monotonicidad (por valores extraídos incorrectamente)
+  // Q3 DEBE ser estrictamente creciente tanto en x como en y
+  anchors.sort((a,b)=>a.x-b.x);
+  const monoAnchors=[anchors[0]];
+  for(let i=1;i<anchors.length;i++){
+    const prev=monoAnchors[monoAnchors.length-1];
+    if(anchors[i].x>prev.x+0.001&&anchors[i].y>prev.y+0.001) monoAnchors.push(anchors[i]);
+  }
+  // Reemplazar anchors con la versión monotónica validada
+  anchors.length=0; monoAnchors.forEach(a=>anchors.push(a));
+  console.info('[Malvern EN] Anchors finales:',anchors.map(a=>`(${a.x.toFixed(3)},${a.y.toFixed(1)})`).join(' '));
+
+  const Q3=[...anchors.map(a=>({...a}))];
+
+  for(let ai=0;ai<anchors.length-1;ai++){
+    const {x:x1,y:y1}=anchors[ai],{x:x2,y:y2}=anchors[ai+1];
+    const binsHere=q3pts.filter(p=>p.x>x1&&p.x<x2);
+    if(!binsHere.length) continue;
+    let cum=0;
+    const cumBins=binsHere.map(p=>{cum+=p.y;return{x:p.x,c:cum};});
+    const total=cum; if(total<=0) continue;
+    const dY=y2-y1;
+    for(const {x,c} of cumBins) Q3.push({x,y:y1+c/total*dY});
+  }
+
+  Q3.sort((a,b)=>a.x-b.x);
+  const Q3f=Q3.filter((p,i)=>i===0||Math.abs(p.x-Q3[i-1].x)>0.001);
+  // Devolver también los valores exactos de la sección Result para uso directo
+  return{Q3:Q3f,q3:q3pts,
+    _exact:{d10,d50,d90,span,vBelow3,vRange3_30}};
 }
 
 // ── Metadata CILAS ──────────────────────────────────────────
@@ -644,18 +773,115 @@ function extractCilasTableData(lines) {
   return{Q3,q3};
 }
 
+// ── Extrae curva roja del gráfico Malvern EN renderizando el PDF a canvas ─
+// Escanea píxeles rojos columna a columna y convierte posición → (µm, q3)
+async function extractMalvernChartCurve(page, _vp, rawItems){
+  try{
+    const SCALE=2;
+    const svp=page.getViewport({scale:SCALE});
+    const W=Math.floor(svp.width), H=Math.floor(svp.height);
+
+    // Renderizar a canvas oculto
+    const cv=document.createElement('canvas');
+    cv.width=W; cv.height=H;
+    const ctx=cv.getContext('2d');
+    await page.render({canvasContext:ctx, viewport:svp}).promise;
+    const px=ctx.getImageData(0,0,W,H).data;
+
+    // Escanear cada columna buscando el píxel más rojo (la curva)
+    const redPts=[];
+    for(let cx=0;cx<W;cx++){
+      let best=-1,maxS=40;
+      for(let cy=0;cy<H;cy++){
+        const i=(cy*W+cx)*4;
+        const r=px[i],g=px[i+1],b=px[i+2];
+        const s=r-Math.max(g,b);
+        if(r>120&&g<90&&b<90&&s>maxS){maxS=s;best=cy;}
+      }
+      if(best>=0) redPts.push({cx,cy:best});
+    }
+    console.info('[Malvern canvas] Píxeles rojos:',redPts.length);
+    if(redPts.length<40) return null;
+
+    // Convierte posición PDF → píxel canvas usando el viewport escalado
+    function tc(pdfX,pdfY){
+      const[cx,cy]=svp.convertToViewportPoint(pdfX,pdfY);
+      return{cx:Math.round(cx),cy:Math.round(cy)};
+    }
+
+    // Calibración eje X (escala log) desde etiquetas del eje
+    const xCandidates=[
+      {s:'0.01',µm:.01},{s:'0.1',µm:.1},{s:'1.0',µm:1},
+      {s:'10.0',µm:10},{s:'100.0',µm:100},{s:'1,000.0',µm:1000}
+    ];
+    const xCal=xCandidates.map(({s,µm})=>{
+      const it=rawItems.find(t=>t.str===s||t.str===s.replace(',',''));
+      return it?{logMu:Math.log10(µm),cx:tc(it.pdfX,it.pdfY).cx}:null;
+    }).filter(Boolean);
+    console.info('[Malvern canvas] xCal:',xCal.map(c=>`10^${c.logMu}@cx${c.cx}`).join(', '));
+    if(xCal.length<2) return null;
+
+    // Regresión lineal: logMu = xA*cx + xB
+    const N=xCal.length,sX=xCal.reduce((s,v)=>s+v.cx,0),sY=xCal.reduce((s,v)=>s+v.logMu,0);
+    const sXY=xCal.reduce((s,v)=>s+v.cx*v.logMu,0),sXX=xCal.reduce((s,v)=>s+v.cx*v.cx,0);
+    const det=N*sXX-sX*sX; if(Math.abs(det)<1e-10) return null;
+    const xA=(N*sXY-sX*sY)/det,xB=(sY-xA*sX)/N;
+
+    // Calibración eje Y (lineal, canvas: cy crece hacia abajo → q3 decrece)
+    const xMin=Math.min(...xCal.map(c=>c.cx));
+    const yCal=[0,1,2,3,4,5,6,7,8,9,10]
+      .map(v=>{
+        const it=rawItems.find(t=>t.str===String(v)&&tc(t.pdfX,t.pdfY).cx<xMin);
+        return it?{v,cy:tc(it.pdfX,it.pdfY).cy}:null;
+      }).filter(Boolean);
+    console.info('[Malvern canvas] yCal:',yCal.map(c=>`${c.v}@cy${c.cy}`).join(' '));
+
+    let yA=0,yB=0;
+    if(yCal.length>=2){
+      // Regresión: q3 = yA*cy + yB (yA negativo porque cy↑ implica q3↓)
+      const ny=yCal.length,sCy=yCal.reduce((s,v)=>s+v.cy,0),sVy=yCal.reduce((s,v)=>s+v.v,0);
+      const sCyV=yCal.reduce((s,v)=>s+v.cy*v.v,0),sCyCy=yCal.reduce((s,v)=>s+v.cy*v.cy,0);
+      const dY=ny*sCyCy-sCy*sCy;
+      if(Math.abs(dY)>1e-10){yA=(ny*sCyV-sCy*sVy)/dY;yB=(sVy-yA*sCy)/ny;}
+    } else {
+      // Fallback: asumir cy mínimo = q3 máximo (~5%), cy máximo = 0
+      const cys=redPts.map(p=>p.cy),cyMin=Math.min(...cys),cyMax=Math.max(...cys);
+      yA=-5/(cyMax-cyMin||1); yB=5-yA*cyMin;
+    }
+
+    // Convertir píxeles rojos → (µm, q3)
+    const pts=[];
+    for(const{cx,cy}of redPts){
+      const µm=Math.pow(10,xA*cx+xB);
+      const q3=Math.max(0,yA*cy+yB);
+      if(µm>0.005&&µm<15000&&q3<=50) pts.push({x:+µm.toPrecision(4),y:+q3.toPrecision(4)});
+    }
+    pts.sort((a,b)=>a.x-b.x);
+    const result=pts.filter((p,i)=>i===0||p.x-pts[i-1].x>0.001);
+    console.info('[Malvern canvas] Extraídos:',result.length,'puntos,',
+      result[0]?.x,'–',result[result.length-1]?.x,'µm');
+    return result.length>20?result:null;
+  }catch(e){console.warn('[Malvern canvas]',e);return null;}
+}
+
 async function parsePDF(file) {
   const ab=await file.arrayBuffer();
   const pdfDoc=await pdfjsLib.getDocument({data:ab}).promise;
   const allItems=[]; let cumH=0;
+  const pageStore=[]; // para extracción de gráfico Malvern EN
   for(let p=1;p<=pdfDoc.numPages;p++){
     const page=await pdfDoc.getPage(p);
     const vp=page.getViewport({scale:1});
     const tc=await page.getTextContent();
+    const rawItems=[];
     for(const item of tc.items){
       const absY=cumH+(vp.height-item.transform[5]);
-      if(item.str&&item.str.trim()) allItems.push({str:item.str,x:item.transform[4],y:absY});
+      if(item.str&&item.str.trim()){
+        allItems.push({str:item.str,x:item.transform[4],y:absY});
+        rawItems.push({str:item.str.trim(),pdfX:item.transform[4],pdfY:item.transform[5]});
+      }
     }
+    pageStore.push({page,vp,rawItems});
     cumH+=vp.height;
   }
   const lines=groupIntoLines(allItems);
@@ -672,10 +898,29 @@ async function parsePDF(file) {
     const fmt=detectFormat(seg);
     // Omitir páginas CILAS sin tabla completa (solo "definidos por el usuario")
     if(fmt==='cilas'&&!seg.some(l=>l.includes('Valores acumulados característicos'))) continue;
-    const meta=fmt==='cilas'?extractCilasMetadata(seg):fmt==='antonpaar'?extractAntonPaarMetadata(seg):extractMetadata(seg);
-    const{Q3,q3}=fmt==='cilas'?extractCilasTableData(seg):fmt==='antonpaar'?extractAntonPaarTableData(seg):extractTableData(seg);
+    const meta=fmt==='cilas'?extractCilasMetadata(seg):fmt==='antonpaar'?extractAntonPaarMetadata(seg):fmt==='malvern_en'?extractMalvernEnglishMetadata(seg):extractMetadata(seg);
+
+    let Q3,q3,_malvExact;
+    if(fmt==='malvern_en'){
+      const tableResult=extractMalvernEnglishTableData(seg);
+      _malvExact=tableResult._exact;
+      let chartQ3=null;
+      for(const pg of pageStore){
+        chartQ3=await extractMalvernChartCurve(pg.page,pg.vp,pg.rawItems);
+        if(chartQ3&&chartQ3.length>20) break;
+      }
+      if(chartQ3&&chartQ3.length>20){
+        q3=chartQ3;  // q3 desde gráfico (bimodal completo)
+        Q3=tableResult.Q3; // Q3 desde anclas del Result
+      } else {
+        Q3=tableResult.Q3; q3=tableResult.q3;
+      }
+    } else {
+      const td=fmt==='cilas'?extractCilasTableData(seg):fmt==='antonpaar'?extractAntonPaarTableData(seg):extractTableData(seg);
+      Q3=td.Q3; q3=td.q3;
+    }
     if(Q3.length===0&&q3.length===0) continue;
-    results.push({...meta,filename:file.name,Q3,q3,_format:fmt});
+    results.push({...meta,filename:file.name,Q3,q3,_format:fmt,...(_malvExact?{_exact:_malvExact}:{})});
   }
   return results;
 }
@@ -738,6 +983,19 @@ function resolveBounds(data) {
 }
 
 function calcStats(m) {
+  // Para Malvern EN: usar valores exactos de la sección Result del PDF
+  if(m._format==='malvern_en'&&m._exact){
+    const e=m._exact;
+    const d10=e.d10||getDPercentile(m.Q3,10);
+    const d50=e.d50||getDPercentile(m.Q3,50);
+    const d90=e.d90||getDPercentile(m.Q3,90);
+    const span=e.span||(d50>0?(d90-d10)/d50:0);
+    // diff = Volume In Range (3,30) directamente del Result
+    const diff=e.vRange3_30||Math.abs(getValueAtDiameter(m.Q3,30)-getValueAtDiameter(m.Q3,3));
+    const{value:q45val,label:q45lbl}=resolveQ3at45(m.Q3);
+    return{d10,d50,d90,span,diff,q45val,q45lbl,lo:3.0,hi:30.0};
+  }
+  // Cálculo normal para otros formatos
   const d10=getDPercentile(m.Q3,10);
   const d50=getDPercentile(m.Q3,50);
   const d90=getDPercentile(m.Q3,90);
@@ -847,8 +1105,12 @@ function calcRRB(Q3data) {
 function calcCompMetrics(m) {
   const st=calcStats(m);
   const q3v=x=>getValueAtDiameter(m.Q3,x);
-  const flt3=q3v(3);
-  const f3_30=q3v(30)-flt3;
+  // Para Malvern EN: usar fracciones directas del Result cuando están disponibles
+  const e=m._exact||{};
+  const flt3=e.vBelow3!==undefined?e.vBelow3:q3v(3);
+  const f3_30=e.vRange3_30!==undefined?e.vRange3_30:(q3v(30)-flt3);
+  const vAbove30=e.vBelow3!==undefined&&e.vRange3_30!==undefined
+    ?100-e.vBelow3-e.vRange3_30:(100-q3v(30));
   const f30_60=q3v(60)-q3v(30);
   const fgt60=100-q3v(60);
   const r45=100-q3v(45);
@@ -1522,6 +1784,9 @@ async function generateReport() {
     cols.forEach(([l,w])=>{doc.text(l,x+w/2,y2+4.8,{align:'center'});x+=w;});
     return y2+7;
   }
+  function fmtLabel(f){
+    return f==='cilas'?'CILAS':f==='antonpaar'?'A.Paar':f==='malvern_en'?'Malv.EN':'Malvern';
+  }
 
   // ═══════════════════════════════════════════════════════════
   // P1 — Resumen Ejecutivo
@@ -1545,7 +1810,7 @@ async function generateReport() {
   y+=26;
 
   y=sb(y,'TABLA COMPARATIVA DE PARÁMETROS GRANULOMÉTRICOS');
-  const CH1=[['Medicion / Muestra',54],['Fecha',22],['D10',12],['D50',12],['D90',12],['Span',12],['R45',12],['F<3um',11],['F3-30um',11],['Q3@45',11],['Osc.',13]];
+  const CH1=[['Medicion / Muestra',44],['Analizador',14],['Fecha',20],['D10',12],['D50',12],['D90',12],['Span',12],['R45',11],['F<3um',10],['F3-30um',10],['Q3@45',11],['Osc.',12]];
   y=thRow(y,CH1);
   sel.forEach((idx,ri)=>{
     y=chk(y,9);
@@ -1556,10 +1821,10 @@ async function generateReport() {
     if(isBase){doc.setFillColor(245,158,11);doc.rect(M,y,2.5,8,'F');}
     doc.setTextColor(30,41,59);doc.setFont('helvetica',isBase?'bold':'normal');doc.setFontSize(6.5);
     let xc=M;
-    const rv=[(isBase?'★ ':'')+( m.measurementName||m.filename||'').slice(0,26),date||'—',
+    const rv=[(isBase?'* ':'')+( m.measurementName||m.filename||'').slice(0,22),fmtLabel(m._format),date||'-',
       st.d10.toFixed(1),st.d50.toFixed(1),st.d90.toFixed(1),st.span.toFixed(2),
       cM.r45.toFixed(1)+'%',cM.flt3.toFixed(1)+'%',cM.f3_30.toFixed(1)+'%',
-      st.q45val.toFixed(1)+'%',isNaN(m.obscuration)?'—':m.obscuration.toFixed(1)+'%'];
+      st.q45val.toFixed(1)+'%',isNaN(m.obscuration)?'-':m.obscuration.toFixed(1)+'%'];
     CH1.forEach(([,w],ci)=>{doc.text(rv[ci],xc+w/2,y+5.3,{align:'center'});xc+=w;});
     y+=8;
   });
@@ -1609,17 +1874,22 @@ async function generateReport() {
     const cM=calcCompMetrics(m),rrb=calcRRB(m.Q3);
 
     // Info
-    doc.setFillColor(...LG);doc.roundedRect(M,y,PW,26,2,2,'F');
-    doc.setDrawColor(...LIME);doc.roundedRect(M,y,PW,26,2,2,'S');
-    doc.setFillColor(...NAVY);doc.roundedRect(M,y,4,26,2,2,'F');
+    doc.setFillColor(...LG);doc.roundedRect(M,y,PW,30,2,2,'F');
+    doc.setDrawColor(...LIME);doc.roundedRect(M,y,PW,30,2,2,'S');
+    doc.setFillColor(...NAVY);doc.roundedRect(M,y,4,30,2,2,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...NAVY);
     doc.text(`FICHA DE MEDICIÓN ${pi+1} / ${sel.length}`,M+7,y+7);
+    // Badge analizador
+    const anlbl=fmtLabel(m._format);
+    doc.setFillColor(...TEAL);doc.roundedRect(W-M-30,y+3,30,7,2,2,'F');
+    doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(7);
+    doc.text(anlbl,W-M-15,y+7.8,{align:'center'});
     doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(30,41,59);
-    [`Nombre: ${m.measurementName||'-'}`,`Usuario: ${m.user||'-'}`,`Fecha / Hora: ${m.datetime||'-'}`]
-      .forEach((t,i)=>doc.text(safe(t),M+7,y+12+i*5));
+    [`Nombre: ${m.measurementName||'-'}`,`Usuario: ${m.user||'-'}`,`Fecha / Hora: ${m.datetime||'-'}`,`Analizador: ${anlbl}`]
+      .forEach((t,i)=>doc.text(safe(t),M+7,y+13+i*5));
     [`Comentario: ${(m.comment||'-').slice(0,42)}`,`Oscurecimiento: ${isNaN(m.obscuration)?'-':m.obscuration.toFixed(2)+'%'}`,`Archivo: ${m.filename||'-'}`]
-      .forEach((t,i)=>doc.text(safe(t),M+PW/2+2,y+12+i*5));
-    y+=30;
+      .forEach((t,i)=>doc.text(safe(t),M+PW/2+2,y+13+i*5));
+    y+=34;
 
     // Parámetros granulométricos (4 col × 2 filas)
     y=sb(y,'PARÁMETROS GRANULOMÉTRICOS');
@@ -1721,7 +1991,7 @@ async function generateReport() {
         doc.setTextColor(...NAVY);doc.setFont('helvetica','bold');doc.setFontSize(9);
         doc.text(safe(`ANALISIS COMPARATIVO vs. ${mNm}`),M+7,y+6.5);
         doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,116,139);
-        doc.text(safe(`Base: ${bNm}     ${date} ${time}`),M+7,y+10.5);
+        doc.text(safe(`Base: ${bNm}     ${date} ${time}     Analizador: ${fmtLabel(m._format)}`),M+7,y+10.5);
         y+=14;
 
         // Leyenda
@@ -1889,6 +2159,8 @@ function updateMeasurementList() {
       ?`<span class="mi-tag" style="background:rgba(0,181,128,.25);color:#00B580">CILAS</span>`
       :m._format==='antonpaar'
       ?`<span class="mi-tag" style="background:rgba(194,213,0,.35);color:#6b7a00">Anton Paar</span>`
+      :m._format==='malvern_en'
+      ?`<span class="mi-tag" style="background:rgba(49,130,206,.2);color:#2B6CB0">Malvern EN</span>`
       :`<span class="mi-tag">Malvern</span>`;
     const isBase=baseIndex===i;
     const baseBadge=isBase?`<span class="base-badge">BASE</span>`:'';
@@ -2002,6 +2274,7 @@ document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.targe
 </script>
 </body>
 </html>
+
 
 
 

@@ -1468,14 +1468,19 @@ async function generateReport() {
   const now=new Date().toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'});
   let pn=0;
 
-  // Sanitizar caracteres no soportados por Helvetica (Windows-1252)
-  const _dt=doc.text.bind(doc);
-  const _san=t=>String(t)
-    .replace(/[₀₁₂₃₄₅₆₇₈₉]/g,c=>'0123456789'['₀₁₂₃₄₅₆₇₈₉'.indexOf(c)])
-    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,c=>'0123456789'['⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(c)])
-    .replace(/−/g,'-').replace(/[–—]/g,'-').replace(/Δ/g,'Delta')
-    .replace(/★/g,'*').replace(/→/g,'->').replace(/✓/g,'OK').replace(/✗/g,'X').replace(/⚠/g,'(!)');
-  doc.text=function(s,...a){return _dt(typeof s==='string'?_san(s):Array.isArray(s)?s.map(_san):s,...a);};
+  // Helper: limpia caracteres no soportados por Helvetica (no intercepta doc.text para evitar recursión interna de jsPDF)
+  function safe(s){
+    return String(s||'')
+      .replace(/₀/g,'0').replace(/₁/g,'1').replace(/₂/g,'2').replace(/₃/g,'3')
+      .replace(/₄/g,'4').replace(/₅/g,'5').replace(/₆/g,'6').replace(/₇/g,'7')
+      .replace(/₈/g,'8').replace(/₉/g,'9')
+      .replace(/¹/g,'1').replace(/²/g,'2').replace(/³/g,'3').replace(/⁰/g,'0')
+      .replace(/⁴/g,'4').replace(/⁵/g,'5').replace(/⁶/g,'6').replace(/⁷/g,'7')
+      .replace(/⁸/g,'8').replace(/⁹/g,'9')
+      .replace(/−/g,'-').replace(/[–—]/g,'-')
+      .replace(/Δ/g,'D').replace(/★/g,'*').replace(/→/g,'->')
+      .replace(/✓/g,'OK').replace(/✗/g,'X').replace(/⚠/g,'(!)');
+  }
 
   // ── Helpers de página ───────────────────────────────────────
   function np(){
@@ -1535,12 +1540,12 @@ async function generateReport() {
   if(base){
     const bNm=(base.measurementName||base.filename||base._externalFile||'Base').slice(0,50);
     doc.setTextColor(...TEAL);doc.setFont('helvetica','bold');doc.setFontSize(7.5);
-    doc.text(`★ Base de comparación: ${bNm}`,M+8,y+21);
+    doc.text(safe(`* Base de comparacion: ${bNm}`),M+8,y+21);
   }
   y+=26;
 
   y=sb(y,'TABLA COMPARATIVA DE PARÁMETROS GRANULOMÉTRICOS');
-  const CH1=[['Medición / Muestra',54],['Fecha',22],['D₁₀',12],['D₅₀',12],['D₉₀',12],['Span',12],['R45',12],['F<3µm',11],['F3–30µm',11],['Q3@45',11],['Osc.',13]];
+  const CH1=[['Medicion / Muestra',54],['Fecha',22],['D10',12],['D50',12],['D90',12],['Span',12],['R45',12],['F<3um',11],['F3-30um',11],['Q3@45',11],['Osc.',13]];
   y=thRow(y,CH1);
   sel.forEach((idx,ri)=>{
     y=chk(y,9);
@@ -1566,10 +1571,10 @@ async function generateReport() {
   const mD50=allD50.reduce((s,v)=>s+v,0)/allD50.length;
   const sD50=Math.sqrt(allD50.map(v=>(v-mD50)**2).reduce((s,v)=>s+v,0)/allD50.length);
   y=chk(y,28);y=sb(y,'ESTADÍSTICAS DE LA SERIE ANALIZADA');
-  const SBK=[['D₅₀ promedio',`${mD50.toFixed(2)} µm`],['Desv. estándar D₅₀',`${sD50.toFixed(2)} µm`],
-    ['Rango D₅₀',`${Math.min(...allD50).toFixed(1)} – ${Math.max(...allD50).toFixed(1)} µm`],
+  const SBK=[['D50 promedio',`${mD50.toFixed(2)} um`],['Desv. estand. D50',`${sD50.toFixed(2)} um`],
+    ['Rango D50',`${Math.min(...allD50).toFixed(1)} - ${Math.max(...allD50).toFixed(1)} um`],
     ['Span promedio',`${(allSpan.reduce((s,v)=>s+v,0)/allSpan.length).toFixed(3)}`],
-    ['N° mediciones',`${sel.length}`]];
+    ['N mediciones',`${sel.length}`]];
   const sbw=PW/SBK.length;
   SBK.forEach(([l,v],i)=>{
     doc.setFillColor(i%2===0?235:226,i%2===0?241:234,i%2===0?255:252);
@@ -1610,18 +1615,18 @@ async function generateReport() {
     doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...NAVY);
     doc.text(`FICHA DE MEDICIÓN ${pi+1} / ${sel.length}`,M+7,y+7);
     doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(30,41,59);
-    [`Nombre: ${m.measurementName||'—'}`,`Usuario: ${m.user||'—'}`,`Fecha / Hora: ${m.datetime||'—'}`]
-      .forEach((t,i)=>doc.text(t,M+7,y+12+i*5));
-    [`Comentario: ${(m.comment||'—').slice(0,42)}`,`Oscurecimiento: ${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}`,`Archivo: ${m.filename||'—'}`]
-      .forEach((t,i)=>doc.text(t,M+PW/2+2,y+12+i*5));
+    [`Nombre: ${m.measurementName||'-'}`,`Usuario: ${m.user||'-'}`,`Fecha / Hora: ${m.datetime||'-'}`]
+      .forEach((t,i)=>doc.text(safe(t),M+7,y+12+i*5));
+    [`Comentario: ${(m.comment||'-').slice(0,42)}`,`Oscurecimiento: ${isNaN(m.obscuration)?'-':m.obscuration.toFixed(2)+'%'}`,`Archivo: ${m.filename||'-'}`]
+      .forEach((t,i)=>doc.text(safe(t),M+PW/2+2,y+12+i*5));
     y+=30;
 
     // Parámetros granulométricos (4 col × 2 filas)
     y=sb(y,'PARÁMETROS GRANULOMÉTRICOS');
-    const pBks=[['D₁₀',`${st.d10.toFixed(2)} µm`],['D₅₀ (mediana)',`${st.d50.toFixed(2)} µm`],
-      ['D₉₀',`${st.d90.toFixed(2)} µm`],['Span (D₉₀−D₁₀)/D₅₀',st.span.toFixed(3)],
-      [`Q3@${st.q45lbl} µm (malla 45)`,`${st.q45val.toFixed(2)}%`],[`|ΔQ3| ${lo}–${hi} µm`,`${st.diff.toFixed(2)}%`],
-      ['Pendiente RRB (n)',isNaN(rrb.n)?'—':rrb.n.toFixed(4)],["Tamaño RRB (x')",isNaN(rrb.xp)?'—':`${rrb.xp.toFixed(2)} µm`]];
+    const pBks=[['D10',`${st.d10.toFixed(2)} um`],['D50 (mediana)',`${st.d50.toFixed(2)} um`],
+      ['D90',`${st.d90.toFixed(2)} um`],['Span (D90-D10)/D50',st.span.toFixed(3)],
+      [`Q3@${st.q45lbl} um (malla 45)`,`${st.q45val.toFixed(2)}%`],[`|DQ3| ${lo}-${hi} um`,`${st.diff.toFixed(2)}%`],
+      ['Pendiente RRB (n)',isNaN(rrb.n)?'-':rrb.n.toFixed(4)],["Tamano RRB (x')",isNaN(rrb.xp)?'-':`${rrb.xp.toFixed(2)} um`]];
     const pBw=PW/4;
     pBks.forEach(([l,v],i)=>{
       const col=i%4,row=Math.floor(i/4),px=M+col*pBw,by=y+row*13;
@@ -1635,12 +1640,12 @@ async function generateReport() {
     // Fracciones granulométricas (3 col × 2 filas)
     y=chk(y,28);y=sb(y,'ANÁLISIS DE FRACCIONES GRANULOMÉTRICAS');
     const fBks=[
-      ['Fracción < 3 µm (ultrafinos)',`${cM.flt3.toFixed(2)}%`,cM.flt3>5?'warn':'ok'],
-      ['Fracción 3–30 µm (zona noble)',`${cM.f3_30.toFixed(2)}%`,'ok'],
-      ['Fracción 30–60 µm',`${cM.f30_60.toFixed(2)}%`,cM.f30_60>30?'warn':'ok'],
-      ['Fracción > 60 µm (inertes)',`${cM.fgt60.toFixed(2)}%`,cM.fgt60>5?'bad':'ok'],
-      ['Residuo 45 µm — R325',`${cM.r45.toFixed(2)}%`,cM.r45>10?'warn':'ok'],
-      ['Área q3 (3–30 µm)',isNaN(cM.auc)?'—':cM.auc.toFixed(3),'ok'],
+      ['Fraccion < 3 um (ultrafinos)',`${cM.flt3.toFixed(2)}%`,cM.flt3>5?'warn':'ok'],
+      ['Fraccion 3-30 um (zona noble)',`${cM.f3_30.toFixed(2)}%`,'ok'],
+      ['Fraccion 30-60 um',`${cM.f30_60.toFixed(2)}%`,cM.f30_60>30?'warn':'ok'],
+      ['Fraccion > 60 um (inertes)',`${cM.fgt60.toFixed(2)}%`,cM.fgt60>5?'bad':'ok'],
+      ['Residuo 45 um - R325',`${cM.r45.toFixed(2)}%`,cM.r45>10?'warn':'ok'],
+      ['Area q3 (3-30 um)',isNaN(cM.auc)?'-':cM.auc.toFixed(3),'ok'],
     ];
     const fBw=PW/3;
     fBks.forEach(([l,v,fst],i)=>{
@@ -1670,9 +1675,9 @@ async function generateReport() {
       doc.setFillColor(230,235,255);doc.rect(M,y,PW,12,'F');
       doc.setFillColor(...NAVY);doc.rect(M,y,3,12,'F');
       doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...NAVY);
-      doc.text(`Índice de uniformidad RRB (UI) = ${cM.ui.toFixed(4)}`,M+7,y+5);
+      doc.text(`Indice uniformidad RRB (UI) = ${cM.ui.toFixed(4)}`,M+7,y+5);
       doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(...SLATE);
-      doc.text(`UI = x' / (D₉₀ − D₁₀) — Mide la selectividad del separador dinámico. Mayor UI → mayor selectividad.`,M+7,y+10);
+      doc.text(`UI = x' / (D90 - D10) - Mide la selectividad del separador. Mayor UI = mayor selectividad.`,M+7,y+10);
       y+=16;
     }
   }
@@ -1687,20 +1692,20 @@ async function generateReport() {
 
     if(targets.length){
       const PCRIT=[
-        ['r45','Residuo 45 µm (R325)','pp',2,'y','Aumento→mayor fracción inerte.','Reducción extrema→mayor consumo energético.'],
-        ['d10','d₁₀','µm',0.5,'g','Aumento→déficit de finos reactivos.','Descenso marcado→sobre-molienda de finos.'],
-        ['d50','d₅₀','µm',2,'r','Aumento→molienda más gruesa; verificar separador.','Descenso→molienda más fina; revisar alimentación.'],
-        ['d90','d₉₀','µm',5,'y','Aumento→mayor fracción inerte a 28 d.','Reducción extrema→separador a velocidad alta.'],
-        ['rrb_n','Pendiente RRB (n)','',0.08,'y','Distribución más estrecha→hidratación uniforme.','Distribución más ancha→mejor empaquetamiento.'],
-        ['rrb_xp',"Tamaño RRB (x')",'µm',3,'y','Desplazamiento global hacia mayor tamaño.','Desplazamiento global hacia menor tamaño.'],
-        ['span','Span (d₉₀−d₁₀)/d₅₀','',0.4,'y','Aumento→distribución más dispersa.','Reducción→molienda más uniforme.'],
-        ['skew','Asimetría de curva','',0.2,'g','Cola hacia gruesos; revisar separador.','Mayor centrado de la distribución.'],
-        ['flt3','Fracción < 3 µm','pp',3,'y','Exceso→más demanda de agua y retracción.','Déficit→menor reactividad muy temprana.'],
-        ['f3_30','Fracción 3–30 µm','pp',5,'r','Mayor eficiencia en zona noble.','Pérdida de zona noble; baja resistencia.'],
-        ['f30_60','Fracción 30–60 µm','pp',5,'y','Posible molienda gruesa o rotor bajo.','Menor aporte a resistencias tardías.'],
-        ['fgt60','Fracción > 60 µm','pp',2,'r','Fracción inerte aumenta→negativo.','Favorable: menor fracción inerte.'],
-        ['auc','Área q3 (3–30 µm)','',null,'y','Mayor contribución integral zona noble.','Pérdida de zona noble; baja resistencia.',8],
-        ['ui','Índice RRB (UI)','',null,'g','Mayor selectividad del separador.','Menor selectividad del separador.',5],
+        ['r45','Residuo 45 um (R325)','pp',2,'y','Aumento->mayor fraccion inerte.','Reduccion extrema->mayor consumo energetico.'],
+        ['d10','d10','um',0.5,'g','Aumento->deficit de finos reactivos.','Descenso marcado->sobre-molienda de finos.'],
+        ['d50','d50','um',2,'r','Aumento->molienda mas gruesa; verificar separador.','Descenso->molienda mas fina; revisar alimentacion.'],
+        ['d90','d90','um',5,'y','Aumento->mayor fraccion inerte a 28 d.','Reduccion extrema->separador a velocidad alta.'],
+        ['rrb_n','Pendiente RRB (n)','',0.08,'y','Distribucion mas estrecha->hidratacion uniforme.','Distribucion mas ancha->mejor empaquetamiento.'],
+        ['rrb_xp',"Tamano RRB (x')",'um',3,'y','Desplazamiento global hacia mayor tamano.','Desplazamiento global hacia menor tamano.'],
+        ['span','Span (d90-d10)/d50','',0.4,'y','Aumento->distribucion mas dispersa.','Reduccion->molienda mas uniforme.'],
+        ['skew','Asimetria de curva','',0.2,'g','Cola hacia gruesos; revisar separador.','Mayor centrado de la distribucion.'],
+        ['flt3','Fraccion < 3 um','pp',3,'y','Exceso->mas demanda de agua y retraccion.','Deficit->menor reactividad muy temprana.'],
+        ['f3_30','Fraccion 3-30 um','pp',5,'r','Mayor eficiencia en zona noble.','Perdida de zona noble; baja resistencia.'],
+        ['f30_60','Fraccion 30-60 um','pp',5,'y','Posible molienda gruesa o rotor bajo.','Menor aporte a resistencias tardias.'],
+        ['fgt60','Fraccion > 60 um','pp',2,'r','Fraccion inerte aumenta->negativo.','Favorable: menor fraccion inerte.'],
+        ['auc','Area q3 (3-30 um)','',null,'y','Mayor contribucion integral zona noble.','Perdida de zona noble; baja resistencia.',8],
+        ['ui','Indice RRB (UI)','',null,'g','Mayor selectividad del separador.','Menor selectividad del separador.',5],
       ];
 
       for(let _ti=0;_ti<targets.length;_ti++){
@@ -1714,9 +1719,9 @@ async function generateReport() {
         doc.setFillColor(230,235,255);doc.rect(M,y,PW,10,'F');
         doc.setFillColor(...NAVY);doc.rect(M,y,4,10,'F');
         doc.setTextColor(...NAVY);doc.setFont('helvetica','bold');doc.setFontSize(9);
-        doc.text(`ANÁLISIS COMPARATIVO vs. ${mNm}`,M+7,y+6.5);
+        doc.text(safe(`ANALISIS COMPARATIVO vs. ${mNm}`),M+7,y+6.5);
         doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,116,139);
-        doc.text(`Base: ${bNm}     ${date} ${time}`,M+7,y+10.5);
+        doc.text(safe(`Base: ${bNm}     ${date} ${time}`),M+7,y+10.5);
         y+=14;
 
         // Leyenda
@@ -1727,7 +1732,7 @@ async function generateReport() {
         y+=8;
 
         // Cabecera tabla
-        const CC=[['Parámetro',70],['Base',24],['Actual',24],['Δ',24],['Tolerancia',24],['',16]];
+        const CC=[['Parametro',70],['Base',24],['Actual',24],['Delta',24],['Tolerancia',24],['',16]];
         let cx=M;
         doc.setFillColor(51,65,85);doc.rect(M,y,PW,6.5,'F');
         doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
@@ -1787,7 +1792,7 @@ async function generateReport() {
             doc.setFillColor(...rc);doc.rect(M,y,PW,8,'F');
             doc.setFillColor(...tc);doc.rect(M,y,3,8,'F');
             doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(30,41,59);
-            doc.splitTextToSize(rec.msg,PW-9).slice(0,2).forEach((l,li)=>doc.text(l,M+6,y+3.5+li*3.5));
+            doc.splitTextToSize(safe(rec.msg),PW-9).slice(0,2).forEach((l,li)=>doc.text(l,M+6,y+3.5+li*3.5));
             y+=9;
           });
         } else {
@@ -1997,5 +2002,6 @@ document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.targe
 </script>
 </body>
 </html>
+
 
 

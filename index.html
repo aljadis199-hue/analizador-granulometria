@@ -373,7 +373,20 @@ function hexToRgba(hex, a) {
   const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
   return `rgba(${r},${g},${b},${a})`;
 }
-function parseDT(s) { try{ return new Date(s); }catch{ return new Date(0); } }
+function parseDT(s) {
+  if(!s) return new Date(0);
+  // Formato dd/mm/yyyy [hh:mm[:ss][ ][AM|PM]] — Malvern/CILAS Colombia
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?)?/i);
+  if(m){
+    const day=+m[1],mon=+m[2]-1,yr=+m[3];
+    let h=m[4]?+m[4]:0,mn=m[5]?+m[5]:0,sc=m[6]?+m[6]:0;
+    const ap=(m[7]||'').toUpperCase();
+    if(ap==='PM'&&h!==12) h+=12; else if(ap==='AM'&&h===12) h=0;
+    const d=new Date(yr,mon,day,h,mn,sc);
+    return isNaN(d.getTime())?new Date(0):d;
+  }
+  try{ const d=new Date(s); return isNaN(d.getTime())?new Date(0):d; }catch{return new Date(0);}
+}
 function fmtDT(s) {
   if (!s) return {date:'—', time:''};
   const sp = s.indexOf(' ');
@@ -1240,8 +1253,8 @@ function plotq3Comparison(indices) {
 
 function plotHistorico(indices) {
   const sorted=[...indices].sort((a,b)=>{
-    const d=parseDT(measurements[b].datetime)-parseDT(measurements[a].datetime);
-    return isNaN(d)?b-a:d;
+    const d=parseDT(measurements[a].datetime)-parseDT(measurements[b].datetime);
+    return isNaN(d)?a-b:d;
   });
   const labels=[],yVals=[],hoverTxts=[];
   for(const idx of sorted){
@@ -1288,8 +1301,8 @@ function doD50Historico() {
   const sel=getSelected();
   if(!sel.length){showToast('⚠ Selecciona al menos una medición.');return;}
   const sorted=[...sel].sort((a,b)=>{
-    const d=parseDT(measurements[b].datetime)-parseDT(measurements[a].datetime);
-    return isNaN(d)?b-a:d;
+    const d=parseDT(measurements[a].datetime)-parseDT(measurements[b].datetime);
+    return isNaN(d)?a-b:d;
   });
   const labels=[],d50s=[],d10s=[],d90s=[],spans=[];
   for(const idx of sorted){
@@ -1438,194 +1451,361 @@ function exportStatsExcel() {
 async function generateReport() {
   const sel=getSelected();
   if(!sel.length){showToast('⚠ Selecciona al menos una medición para generar el reporte.');return;}
-  showOverlay(true); setLoadingMsg('Generando reporte PDF…','Capturando gráficos');
+  showOverlay(true); setLoadingMsg('Generando informe PDF…','Capturando gráficos');
 
-  // Paleta Argos correcta
-  const NAVY=[16,27,70], LIME=[194,213,0], TEAL=[0,181,128];
-  const SLATE=[71,85,105], WHITE=[255,255,255];
+  const NAVY=[16,27,70],LIME=[194,213,0],TEAL=[0,181,128],SLATE=[71,85,105],WHITE=[255,255,255];
+  const RED=[229,62,62],AMB=[217,119,6],LG=[248,250,252],MG=[241,245,249];
 
-  // ── Capturar los 3 gráficos renderizando en el div principal ──
-  const CW=820, CH=310;
-  let imgHist=null, imgQ3=null, imgq3=null;
-  try{ plotHistograma(sel); await new Promise(r=>setTimeout(r,250));
-    imgHist=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
-  try{ plotQ3Comparison(sel); await new Promise(r=>setTimeout(r,250));
-    imgQ3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
-  try{ plotq3Comparison(sel); await new Promise(r=>setTimeout(r,250));
-    imgq3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5}); }catch(e){}
+  // ── Capturar gráficos ───────────────────────────────────────
+  const CW=820,CH=310; let imgHist=null,imgQ3=null,imgq3=null;
+  try{plotHistograma(sel);await new Promise(r=>setTimeout(r,280));imgHist=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5});}catch(e){}
+  try{plotQ3Comparison(sel);await new Promise(r=>setTimeout(r,280));imgQ3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5});}catch(e){}
+  try{plotq3Comparison(sel);await new Promise(r=>setTimeout(r,280));imgq3=await Plotly.toImage('chart',{format:'png',width:CW,height:CH,scale:1.5});}catch(e){}
 
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
-  const W=210, M=14;
+  const W=210,M=14,PW=182;
   const now=new Date().toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'});
+  let pn=0;
 
-  function addHeader(pageNum){
-    doc.setFillColor(...NAVY);
-    doc.rect(0,0,W,28,'F');
-    doc.setFillColor(...LIME);
-    doc.rect(0,28,W,4,'F');
-    doc.setFillColor(...LIME);
-    doc.roundedRect(M,5,18,16,2,2,'F');
-    doc.setTextColor(...NAVY);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(9);
-    doc.text('ARGOS',M+2,15.5);
-    doc.setTextColor(...WHITE);
-    doc.setFontSize(12);
-    doc.text('ANALIZADOR DE DISTRIBUCIÓN GRANULOMÉTRICA',M+22,12);
-    doc.setFontSize(8);
-    doc.setFont('helvetica','normal');
-    doc.text('Laboratorios Argos · ISO 13320 · Malvern Mastersizer',M+22,19.5);
-    doc.setTextColor(...LIME);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(7);
-    doc.text(`Generado: ${now}`,W-M,26.5,{align:'right'});
-    if(pageNum>1){
-      doc.setTextColor(...WHITE);
-      doc.setFontSize(7);
-      doc.setFont('helvetica','normal');
-      doc.text(`Pág. ${pageNum}`,W-M,7,{align:'right'});
+  // Sanitizar caracteres no soportados por Helvetica (Windows-1252)
+  const _dt=doc.text.bind(doc);
+  const _san=t=>String(t)
+    .replace(/[₀₁₂₃₄₅₆₇₈₉]/g,c=>'0123456789'['₀₁₂₃₄₅₆₇₈₉'.indexOf(c)])
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,c=>'0123456789'['⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(c)])
+    .replace(/−/g,'-').replace(/[–—]/g,'-').replace(/Δ/g,'Delta')
+    .replace(/★/g,'*').replace(/→/g,'->').replace(/✓/g,'OK').replace(/✗/g,'X').replace(/⚠/g,'(!)');
+  doc.text=function(s,...a){return _dt(typeof s==='string'?_san(s):Array.isArray(s)?s.map(_san):s,...a);};
+
+  // ── Helpers de página ───────────────────────────────────────
+  function np(){
+    if(pn>0) doc.addPage(); pn++;
+    doc.setFillColor(...NAVY);doc.rect(0,0,W,28,'F');
+    doc.setFillColor(...LIME);doc.rect(0,28,W,3,'F');
+    doc.setFillColor(...LIME);doc.roundedRect(M,5,18,16,2,2,'F');
+    doc.setTextColor(...NAVY);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('ARGOS',M+2,15.5);
+    doc.setTextColor(...WHITE);doc.setFontSize(11);doc.setFont('helvetica','bold');
+    doc.text('INFORME DE DISTRIBUCIÓN GRANULOMÉTRICA',M+22,11);
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');
+    doc.text('Laboratorios Argos · ISO 13320 · Célula de Manufactura Digital',M+22,19);
+    doc.setTextColor(...LIME);doc.setFont('helvetica','bold');doc.setFontSize(7);
+    doc.text(`Generado: ${now}`,W-M,26,{align:'right'});
+    doc.setTextColor(150,160,180);doc.setFont('helvetica','normal');doc.setFontSize(7);
+    doc.text(`Pág. ${pn}`,W-M,7,{align:'right'});
+    doc.setDrawColor(...LIME);doc.line(M,285,W-M,285);
+    doc.setFontSize(7);doc.setTextColor(148,163,184);
+    doc.text('Desarrollado por la Célula de Manufactura Digital — Laboratorios Argos',M,290);
+    doc.text(`ISO 13320 · ${new Date().toLocaleDateString('es-CO')}`,W-M,290,{align:'right'});
+    return 36;
+  }
+  function chk(y,h=20){return(y+h>278)?np():y;}
+  function sb(y,txt,c=NAVY){
+    doc.setFillColor(...c);doc.rect(M,y,PW,7,'F');
+    doc.setFillColor(...TEAL);doc.rect(M,y,3,7,'F');
+    doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(8.5);
+    doc.text(txt,M+6,y+5); return y+9;
+  }
+  function dot(x,y2,st){
+    if(st==='ok')doc.setFillColor(...TEAL);
+    else if(st==='warn')doc.setFillColor(...AMB);
+    else doc.setFillColor(...RED);
+    doc.circle(x,y2,1.3,'F');
+  }
+  function thRow(y2,cols){
+    let x=M; doc.setFillColor(...SLATE);doc.rect(M,y2,PW,7,'F');
+    doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
+    cols.forEach(([l,w])=>{doc.text(l,x+w/2,y2+4.8,{align:'center'});x+=w;});
+    return y2+7;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // P1 — Resumen Ejecutivo
+  // ═══════════════════════════════════════════════════════════
+  let y=np();
+
+  // Bloque título
+  doc.setFillColor(...LG);doc.rect(M,y,PW,22,'F');
+  doc.setDrawColor(...LIME);doc.rect(M,y,PW,22,'S');
+  doc.setFillColor(...NAVY);doc.rect(M,y,4,22,'F');
+  doc.setTextColor(...NAVY);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('RESUMEN EJECUTIVO — ANÁLISIS GRANULOMÉTRICO',M+8,y+8);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...SLATE);
+  doc.text(`Mediciones analizadas: ${sel.length}     Fecha: ${now}`,M+8,y+15);
+  const base=getBaseMeasurement();
+  if(base){
+    const bNm=(base.measurementName||base.filename||base._externalFile||'Base').slice(0,50);
+    doc.setTextColor(...TEAL);doc.setFont('helvetica','bold');doc.setFontSize(7.5);
+    doc.text(`★ Base de comparación: ${bNm}`,M+8,y+21);
+  }
+  y+=26;
+
+  y=sb(y,'TABLA COMPARATIVA DE PARÁMETROS GRANULOMÉTRICOS');
+  const CH1=[['Medición / Muestra',54],['Fecha',22],['D₁₀',12],['D₅₀',12],['D₉₀',12],['Span',12],['R45',12],['F<3µm',11],['F3–30µm',11],['Q3@45',11],['Osc.',13]];
+  y=thRow(y,CH1);
+  sel.forEach((idx,ri)=>{
+    y=chk(y,9);
+    const m=measurements[idx],st=calcStats(m),cM=calcCompMetrics(m);
+    const{date}=fmtDT(m.datetime);
+    const isBase=base&&(m===base||idx===baseIndex);
+    doc.setFillColor(...(isBase?[255,251,235]:ri%2===0?LG:MG));doc.rect(M,y,PW,8,'F');
+    if(isBase){doc.setFillColor(245,158,11);doc.rect(M,y,2.5,8,'F');}
+    doc.setTextColor(30,41,59);doc.setFont('helvetica',isBase?'bold':'normal');doc.setFontSize(6.5);
+    let xc=M;
+    const rv=[(isBase?'★ ':'')+( m.measurementName||m.filename||'').slice(0,26),date||'—',
+      st.d10.toFixed(1),st.d50.toFixed(1),st.d90.toFixed(1),st.span.toFixed(2),
+      cM.r45.toFixed(1)+'%',cM.flt3.toFixed(1)+'%',cM.f3_30.toFixed(1)+'%',
+      st.q45val.toFixed(1)+'%',isNaN(m.obscuration)?'—':m.obscuration.toFixed(1)+'%'];
+    CH1.forEach(([,w],ci)=>{doc.text(rv[ci],xc+w/2,y+5.3,{align:'center'});xc+=w;});
+    y+=8;
+  });
+  y+=4;
+
+  // Estadísticas de serie
+  const allD50=sel.map(i=>calcStats(measurements[i]).d50);
+  const allSpan=sel.map(i=>calcStats(measurements[i]).span);
+  const mD50=allD50.reduce((s,v)=>s+v,0)/allD50.length;
+  const sD50=Math.sqrt(allD50.map(v=>(v-mD50)**2).reduce((s,v)=>s+v,0)/allD50.length);
+  y=chk(y,28);y=sb(y,'ESTADÍSTICAS DE LA SERIE ANALIZADA');
+  const SBK=[['D₅₀ promedio',`${mD50.toFixed(2)} µm`],['Desv. estándar D₅₀',`${sD50.toFixed(2)} µm`],
+    ['Rango D₅₀',`${Math.min(...allD50).toFixed(1)} – ${Math.max(...allD50).toFixed(1)} µm`],
+    ['Span promedio',`${(allSpan.reduce((s,v)=>s+v,0)/allSpan.length).toFixed(3)}`],
+    ['N° mediciones',`${sel.length}`]];
+  const sbw=PW/SBK.length;
+  SBK.forEach(([l,v],i)=>{
+    doc.setFillColor(i%2===0?235:226,i%2===0?241:234,i%2===0?255:252);
+    doc.rect(M+i*sbw,y,sbw-1,14,'F');
+    doc.setTextColor(100,116,139);doc.setFont('helvetica','bold');doc.setFontSize(6);
+    doc.text(l,M+i*sbw+sbw/2,y+4.5,{align:'center'});
+    doc.setFontSize(9);doc.setTextColor(...NAVY);
+    doc.text(v,M+i*sbw+sbw/2,y+11,{align:'center'});
+  });
+  y+=18;
+
+  // ═══════════════════════════════════════════════════════════
+  // P2 — Gráficos Analíticos
+  // ═══════════════════════════════════════════════════════════
+  y=np();
+  y=sb(y,'GRÁFICOS ANALÍTICOS — DISTRIBUCIÓN DE TAMAÑO DE PARTÍCULAS');
+  const cImgW=PW,cImgH=Math.min((CH/CW)*PW,64);
+  [[imgHist,'HISTOGRAMA + CURVA ACUMULADA'],[imgQ3,'COMPARACIÓN Q3 — % ACUMULADO'],[imgq3,'COMPARACIÓN q3 — DENSIDAD']].forEach(([img,lbl])=>{
+    if(!img) return;
+    y=chk(y,cImgH+10);
+    doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(...TEAL);doc.text(lbl,M,y+4);
+    doc.addImage(img,'PNG',M,y+5,cImgW,cImgH); y+=cImgH+9;
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // P3+ — Fichas individuales por medición
+  // ═══════════════════════════════════════════════════════════
+  for(let pi=0;pi<sel.length;pi++){
+    y=np();
+    const idx=sel[pi],m=measurements[idx],st=calcStats(m);
+    const{lo,hi}=resolveBounds(m.Q3);
+    const cM=calcCompMetrics(m),rrb=calcRRB(m.Q3);
+
+    // Info
+    doc.setFillColor(...LG);doc.roundedRect(M,y,PW,26,2,2,'F');
+    doc.setDrawColor(...LIME);doc.roundedRect(M,y,PW,26,2,2,'S');
+    doc.setFillColor(...NAVY);doc.roundedRect(M,y,4,26,2,2,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...NAVY);
+    doc.text(`FICHA DE MEDICIÓN ${pi+1} / ${sel.length}`,M+7,y+7);
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(30,41,59);
+    [`Nombre: ${m.measurementName||'—'}`,`Usuario: ${m.user||'—'}`,`Fecha / Hora: ${m.datetime||'—'}`]
+      .forEach((t,i)=>doc.text(t,M+7,y+12+i*5));
+    [`Comentario: ${(m.comment||'—').slice(0,42)}`,`Oscurecimiento: ${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}`,`Archivo: ${m.filename||'—'}`]
+      .forEach((t,i)=>doc.text(t,M+PW/2+2,y+12+i*5));
+    y+=30;
+
+    // Parámetros granulométricos (4 col × 2 filas)
+    y=sb(y,'PARÁMETROS GRANULOMÉTRICOS');
+    const pBks=[['D₁₀',`${st.d10.toFixed(2)} µm`],['D₅₀ (mediana)',`${st.d50.toFixed(2)} µm`],
+      ['D₉₀',`${st.d90.toFixed(2)} µm`],['Span (D₉₀−D₁₀)/D₅₀',st.span.toFixed(3)],
+      [`Q3@${st.q45lbl} µm (malla 45)`,`${st.q45val.toFixed(2)}%`],[`|ΔQ3| ${lo}–${hi} µm`,`${st.diff.toFixed(2)}%`],
+      ['Pendiente RRB (n)',isNaN(rrb.n)?'—':rrb.n.toFixed(4)],["Tamaño RRB (x')",isNaN(rrb.xp)?'—':`${rrb.xp.toFixed(2)} µm`]];
+    const pBw=PW/4;
+    pBks.forEach(([l,v],i)=>{
+      const col=i%4,row=Math.floor(i/4),px=M+col*pBw,by=y+row*13;
+      doc.setFillColor(col%2===0?240:232,col%2===0?243:237,col%2===0?255:252);
+      doc.rect(px,by,pBw-1,12,'F');
+      doc.setTextColor(100,116,139);doc.setFont('helvetica','bold');doc.setFontSize(6);doc.text(l,px+2,by+4.5);
+      doc.setFontSize(8.5);doc.setTextColor(...NAVY);doc.text(v,px+2,by+10.5);
+    });
+    y+=28;
+
+    // Fracciones granulométricas (3 col × 2 filas)
+    y=chk(y,28);y=sb(y,'ANÁLISIS DE FRACCIONES GRANULOMÉTRICAS');
+    const fBks=[
+      ['Fracción < 3 µm (ultrafinos)',`${cM.flt3.toFixed(2)}%`,cM.flt3>5?'warn':'ok'],
+      ['Fracción 3–30 µm (zona noble)',`${cM.f3_30.toFixed(2)}%`,'ok'],
+      ['Fracción 30–60 µm',`${cM.f30_60.toFixed(2)}%`,cM.f30_60>30?'warn':'ok'],
+      ['Fracción > 60 µm (inertes)',`${cM.fgt60.toFixed(2)}%`,cM.fgt60>5?'bad':'ok'],
+      ['Residuo 45 µm — R325',`${cM.r45.toFixed(2)}%`,cM.r45>10?'warn':'ok'],
+      ['Área q3 (3–30 µm)',isNaN(cM.auc)?'—':cM.auc.toFixed(3),'ok'],
+    ];
+    const fBw=PW/3;
+    fBks.forEach(([l,v,fst],i)=>{
+      const col=i%3,row=Math.floor(i/3),px=M+col*fBw,by=y+row*12;
+      doc.setFillColor(...LG);doc.rect(px,by,fBw-1,11,'F');
+      doc.setDrawColor(220,226,234);doc.rect(px,by,fBw-1,11,'S');
+      dot(px+4,by+5.5,fst);
+      doc.setTextColor(80,96,116);doc.setFont('helvetica','normal');doc.setFontSize(6);doc.text(l,px+9,by+4.5);
+      doc.setFontSize(8.5);doc.setTextColor(...NAVY);doc.setFont('helvetica','bold');doc.text(v,px+9,by+9.8);
+    });
+    y+=26;
+
+    // Q3 en mallas estándar
+    y=chk(y,22);y=sb(y,'VALORES Q3 EN MALLAS ESTÁNDAR (µm)');
+    const meshes=[10,32,45,63,90,200];const mBw=PW/meshes.length;
+    meshes.forEach((s,i)=>{
+      const v=getValueAtDiameter(m.Q3,s),px=M+i*mBw;
+      doc.setFillColor(...(i%2===0?NAVY:TEAL));doc.rect(px,y,mBw-1,15,'F');
+      doc.setTextColor(...LIME);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text(`${s} µm`,px+2,y+5.5);
+      doc.setTextColor(...WHITE);doc.setFontSize(9.5);doc.text(`${v.toFixed(1)}%`,px+2,y+12);
+    });
+    y+=19;
+
+    // Índice de uniformidad RRB
+    if(!isNaN(cM.ui)){
+      y=chk(y,14);
+      doc.setFillColor(230,235,255);doc.rect(M,y,PW,12,'F');
+      doc.setFillColor(...NAVY);doc.rect(M,y,3,12,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...NAVY);
+      doc.text(`Índice de uniformidad RRB (UI) = ${cM.ui.toFixed(4)}`,M+7,y+5);
+      doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(...SLATE);
+      doc.text(`UI = x' / (D₉₀ − D₁₀) — Mide la selectividad del separador dinámico. Mayor UI → mayor selectividad.`,M+7,y+10);
+      y+=16;
     }
   }
 
-  function addFooter(){
-    doc.setDrawColor(...LIME);
-    doc.line(M,285,W-M,285);
-    doc.setFontSize(7);
-    doc.setFont('helvetica','normal');
-    doc.setTextColor(148,163,184);
-    doc.text('Desarrollado por la Célula de Manufactura Digital — Laboratorios Argos',M,290);
-    doc.text(`ISO 13320 · ${new Date().toLocaleDateString('es-CO')}`,W-M,290,{align:'right'});
+  // ═══════════════════════════════════════════════════════════
+  // PN+ — Análisis Comparativo (si hay base activa)
+  // ═══════════════════════════════════════════════════════════
+  if(base){
+    const bM=calcCompMetrics(base);
+    const bNm=(base.measurementName||base.filename||base._externalFile||'Base').slice(0,50);
+    const targets=baseMeasurementExternal?sel:sel.filter(i=>i!==baseIndex);
+
+    if(targets.length){
+      const PCRIT=[
+        ['r45','Residuo 45 µm (R325)','pp',2,'y','Aumento→mayor fracción inerte.','Reducción extrema→mayor consumo energético.'],
+        ['d10','d₁₀','µm',0.5,'g','Aumento→déficit de finos reactivos.','Descenso marcado→sobre-molienda de finos.'],
+        ['d50','d₅₀','µm',2,'r','Aumento→molienda más gruesa; verificar separador.','Descenso→molienda más fina; revisar alimentación.'],
+        ['d90','d₉₀','µm',5,'y','Aumento→mayor fracción inerte a 28 d.','Reducción extrema→separador a velocidad alta.'],
+        ['rrb_n','Pendiente RRB (n)','',0.08,'y','Distribución más estrecha→hidratación uniforme.','Distribución más ancha→mejor empaquetamiento.'],
+        ['rrb_xp',"Tamaño RRB (x')",'µm',3,'y','Desplazamiento global hacia mayor tamaño.','Desplazamiento global hacia menor tamaño.'],
+        ['span','Span (d₉₀−d₁₀)/d₅₀','',0.4,'y','Aumento→distribución más dispersa.','Reducción→molienda más uniforme.'],
+        ['skew','Asimetría de curva','',0.2,'g','Cola hacia gruesos; revisar separador.','Mayor centrado de la distribución.'],
+        ['flt3','Fracción < 3 µm','pp',3,'y','Exceso→más demanda de agua y retracción.','Déficit→menor reactividad muy temprana.'],
+        ['f3_30','Fracción 3–30 µm','pp',5,'r','Mayor eficiencia en zona noble.','Pérdida de zona noble; baja resistencia.'],
+        ['f30_60','Fracción 30–60 µm','pp',5,'y','Posible molienda gruesa o rotor bajo.','Menor aporte a resistencias tardías.'],
+        ['fgt60','Fracción > 60 µm','pp',2,'r','Fracción inerte aumenta→negativo.','Favorable: menor fracción inerte.'],
+        ['auc','Área q3 (3–30 µm)','',null,'y','Mayor contribución integral zona noble.','Pérdida de zona noble; baja resistencia.',8],
+        ['ui','Índice RRB (UI)','',null,'g','Mayor selectividad del separador.','Menor selectividad del separador.',5],
+      ];
+
+      for(let _ti=0;_ti<targets.length;_ti++){
+        const cidx=targets[_ti];
+        y=(_ti===0)?np():chk(y,135);
+        const m=measurements[cidx],cM=calcCompMetrics(m);
+        const{date,time}=fmtDT(m.datetime);
+        const mNm=(m.measurementName||m.filename||'—').slice(0,60);
+
+        // Sub-encabezado
+        doc.setFillColor(230,235,255);doc.rect(M,y,PW,10,'F');
+        doc.setFillColor(...NAVY);doc.rect(M,y,4,10,'F');
+        doc.setTextColor(...NAVY);doc.setFont('helvetica','bold');doc.setFontSize(9);
+        doc.text(`ANÁLISIS COMPARATIVO vs. ${mNm}`,M+7,y+6.5);
+        doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,116,139);
+        doc.text(`Base: ${bNm}     ${date} ${time}`,M+7,y+10.5);
+        y+=14;
+
+        // Leyenda
+        doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(100,116,139);
+        dot(M+3,y+2,'ok');doc.text('Dentro de tolerancia',M+6,y+3.5);
+        dot(M+48,y+2,'warn');doc.text('Advertencia',M+51,y+3.5);
+        dot(M+82,y+2,'bad');doc.text('Fuera de tolerancia',M+85,y+3.5);
+        y+=8;
+
+        // Cabecera tabla
+        const CC=[['Parámetro',70],['Base',24],['Actual',24],['Δ',24],['Tolerancia',24],['',16]];
+        let cx=M;
+        doc.setFillColor(51,65,85);doc.rect(M,y,PW,6.5,'F');
+        doc.setTextColor(...WHITE);doc.setFont('helvetica','bold');doc.setFontSize(6.5);
+        CC.forEach(([l,w])=>{if(l)doc.text(l,cx+w/2,y+4.5,{align:'center'});cx+=w;});
+        y+=6.5;
+
+        PCRIT.forEach((cr,ri)=>{
+          const[id,lbl,unit,tol,sev,iPos,iNeg,relTolPct=8]=cr;
+          const bv=bM[id],cv=cM[id];
+          if(isNaN(bv)||isNaN(cv)) return;
+          y=chk(y,7);
+          const d=cv-bv;
+          let st2='ok';
+          if(tol!==null){if(Math.abs(d)>tol*1.4)st2='bad';else if(Math.abs(d)>tol)st2='warn';}
+          else{const p=Math.abs(d)/Math.abs(bv)*100;if(p>relTolPct*1.5)st2='bad';else if(p>relTolPct)st2='warn';}
+          if(st2==='bad')doc.setFillColor(254,242,242);
+          else if(st2==='warn')doc.setFillColor(255,251,235);
+          else doc.setFillColor(...(ri%2===0?LG:MG));
+          doc.rect(M,y,PW,6.5,'F');
+          cx=M;
+          const us=unit?' '+unit:'';
+          const rv=[lbl,isNaN(bv)?'—':bv.toFixed(2)+us,isNaN(cv)?'—':cv.toFixed(2)+us,
+            (d>0?'+':'')+d.toFixed(2)+us,tol!==null?`±${tol}${us}`:`±${relTolPct}%`,''];
+          doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(30,41,59);
+          CC.forEach(([,w],ci)=>{
+            if(ci<5)doc.text(rv[ci],cx+w/2,y+4.5,{align:'center'});
+            else dot(cx+w/2,y+3.3,st2);
+            cx+=w;
+          });
+          y+=6.5;
+        });
+        y+=4;
+
+        // Recomendaciones
+        const recs=[];
+        PCRIT.forEach(cr=>{
+          const[id,lbl,unit,tol,sev,iPos,iNeg,relTolPct=8]=cr;
+          const bv=bM[id],cv=cM[id];
+          if(isNaN(bv)||isNaN(cv)) return;
+          const d=cv-bv;
+          const bad=tol!==null?Math.abs(d)>tol:Math.abs(d)/Math.abs(bv)*100>relTolPct;
+          if(bad) recs.push({sev,msg:`${lbl} (Δ${d>0?'+':''}${d.toFixed(2)}${unit?' '+unit:''}): ${d>0?iPos:iNeg}`});
+        });
+        if(detectBimodality(m.q3)) recs.push({sev:'r',msg:'Bimodalidad detectada en curva de densidad. Posible mezcla deficiente o mezcla de fuentes. Verificar separador.'});
+        findCrossovers(base.Q3,m.Q3).forEach(c=>recs.push({sev:'p',msg:`Cruce de curvas en Ø ${c.x.toFixed(1)} µm — evaluar impacto diferencial por fracción.`}));
+
+        if(recs.length){
+          y=chk(y,10+recs.length*9);
+          y=sb(y,'RECOMENDACIONES DE PROCESO',[26,42,100]);
+          recs.forEach(rec=>{
+            y=chk(y,9);
+            let rc,tc;
+            if(rec.sev==='r'){rc=[254,226,226];tc=RED;}
+            else if(rec.sev==='y'){rc=[255,251,235];tc=AMB;}
+            else if(rec.sev==='p'){rc=[245,243,255];tc=[109,40,217];}
+            else{rc=[240,253,250];tc=TEAL;}
+            doc.setFillColor(...rc);doc.rect(M,y,PW,8,'F');
+            doc.setFillColor(...tc);doc.rect(M,y,3,8,'F');
+            doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(30,41,59);
+            doc.splitTextToSize(rec.msg,PW-9).slice(0,2).forEach((l,li)=>doc.text(l,M+6,y+3.5+li*3.5));
+            y+=9;
+          });
+        } else {
+          y=chk(y,10);
+          doc.setFillColor(240,253,250);doc.rect(M,y,PW,9,'F');
+          doc.setFillColor(...TEAL);doc.rect(M,y,3,9,'F');
+          doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(30,41,59);
+          doc.text('✓ Todos los parámetros se encuentran dentro de tolerancia respecto a la base.',M+6,y+5.5);
+          y+=12;
+        }
+      }
+    }
   }
-
-  function sectionBar(y,text){
-    doc.setFillColor(...NAVY);
-    doc.rect(M,y,W-2*M,7,'F');
-    doc.setFillColor(...TEAL);
-    doc.rect(M,y,3,7,'F');
-    doc.setTextColor(...WHITE);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(8.5);
-    doc.text(text,M+6,y+5);
-    return y+9;
-  }
-
-  // ── PÁGINA 1: resumen comparativo ────────────────────────
-  addHeader(1); addFooter();
-  let y=38;
-  y=sectionBar(y,'RESUMEN COMPARATIVO DE MEDICIONES');
-
-  const cols=[['Medición',42],['D10',15],['D50',15],['D90',15],['Span',14],['Q3@45',18],['|ΔQ3|',18],['Oscurec.',22]];
-  let xc=M;
-  doc.setFillColor(...SLATE);
-  doc.rect(M,y,W-2*M,7,'F');
-  doc.setTextColor(...WHITE);
-  doc.setFontSize(7);
-  cols.forEach(([lbl,w])=>{doc.text(lbl,xc+w/2,y+5,{align:'center'});xc+=w;});
-  y+=7;
-
-  sel.forEach((idx,ri)=>{
-    const m=measurements[idx]; const st=calcStats(m);
-    const{date}=fmtDT(m.datetime);
-    doc.setFillColor(...(ri%2===0?[248,250,252]:[241,245,249]));
-    doc.rect(M,y,W-2*M,8,'F');
-    doc.setTextColor(30,41,59); doc.setFont('helvetica','normal'); doc.setFontSize(7);
-    xc=M;
-    const vals=[
-      `${date} ${m.measurementName||m.filename}`.slice(0,32),
-      `${st.d10.toFixed(1)}µm`,`${st.d50.toFixed(1)}µm`,`${st.d90.toFixed(1)}µm`,
-      st.span.toFixed(2),`${st.q45val.toFixed(1)}%`,`${st.diff.toFixed(2)}%`,
-      isNaN(m.obscuration)?'—':`${m.obscuration.toFixed(1)}%`
-    ];
-    cols.forEach(([,w],i)=>{doc.text(vals[i],xc+w/2,y+5.5,{align:'center'});xc+=w;});
-    y+=8;
-  });
-
-  // ── PÁGINA 2: los 3 gráficos analíticos ──────────────────
-  doc.addPage();
-  addHeader(2); addFooter();
-  let gy=38;
-  gy=sectionBar(gy,'GRÁFICOS ANALÍTICOS');
-
-  const chartW=W-2*M;
-  const chartH=(CH/CW)*chartW;
-  const chartGap=5;
-
-  [
-    [imgHist,'HISTOGRAMA + CURVA ACUMULADA (primera medición)'],
-    [imgQ3,  'COMPARACIÓN Q3 — % ACUMULADO'],
-    [imgq3,  'COMPARACIÓN q3 — DENSIDAD'],
-  ].forEach(([img,lbl])=>{
-    if(!img) return;
-    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...TEAL);
-    doc.text(lbl,M,gy+4);
-    doc.addImage(img,'PNG',M,gy+5,chartW,chartH);
-    gy+=chartH+chartGap+6;
-  });
-
-  // ── PÁGINAS INDIVIDUALES ──────────────────────────────────
-  sel.forEach((idx,pi)=>{
-    doc.addPage();
-    addHeader(pi+3); addFooter();
-    const m=measurements[idx]; const st=calcStats(m);
-    const{lo,hi}=resolveBounds(m.Q3);
-    let py=38;
-
-    // Info de medición
-    doc.setFillColor(248,250,252);
-    doc.roundedRect(M,py,W-2*M,34,2,2,'F');
-    doc.setDrawColor(...LIME);
-    doc.roundedRect(M,py,W-2*M,34,2,2,'S');
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
-    doc.text('INFORMACIÓN DE MEDICIÓN',M+3,py+6);
-    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(30,41,59);
-    [`Nombre: ${m.measurementName||'—'}`,`Usuario: ${m.user||'—'}`,`Fecha / Hora: ${m.datetime||'—'}`]
-      .forEach((t,i)=>doc.text(t,M+3,py+12+i*7));
-    [`Comentario: ${m.comment||'—'}`,`Oscurecimiento: ${isNaN(m.obscuration)?'—':m.obscuration.toFixed(2)+'%'}`,`Archivo: ${m.filename}`]
-      .forEach((t,i)=>doc.text(t,M+95,py+12+i*7));
-    py+=38;
-
-    // Parámetros granulométricos
-    py=sectionBar(py,'PARÁMETROS GRANULOMÉTRICOS');
-    const params=[
-      ['D10',`${st.d10.toFixed(2)} µm`],['D50 (mediana)',`${st.d50.toFixed(2)} µm`],
-      ['D90',`${st.d90.toFixed(2)} µm`],['Span (D90−D10)/D50',st.span.toFixed(3)],
-      [`Q3@${st.q45lbl}µm (malla 45)`,`${st.q45val.toFixed(2)}%`],
-      [`|Q3(${hi})−Q3(${lo})|`,`${st.diff.toFixed(2)}%`],
-    ];
-    params.forEach(([lbl,val],i)=>{
-      const col=i%3, row=Math.floor(i/3);
-      const px=M+col*60, by=py+row*13;
-      doc.setFillColor(...(col%2===0?[16,27,70,0.06]:[0,181,128,0.06]));
-      doc.setFillColor(col%2===0?240:232,col%2===0?243:246,col%2===0?255:252);
-      doc.rect(px,by,59,12,'F');
-      doc.setTextColor(100,116,139); doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
-      doc.text(lbl,px+2,by+4.5);
-      doc.setFontSize(9); doc.setTextColor(...NAVY);
-      doc.text(val,px+2,by+10);
-    });
-    py+=28;
-
-    // Mallas estándar
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...NAVY);
-    doc.text('Q3 EN MALLAS ESTÁNDAR:',M,py+5); py+=7;
-    [10,32,45,63,90,200].forEach((s,i)=>{
-      const v=getValueAtDiameter(m.Q3,s);
-      const px=M+i*32;
-      doc.setFillColor(...(i%2===0?NAVY:TEAL));
-      doc.rect(px,py,31,14,'F');
-      doc.setTextColor(...LIME); doc.setFont('helvetica','bold'); doc.setFontSize(7);
-      doc.text(`${s} µm`,px+2,py+5.5);
-      doc.setTextColor(...WHITE); doc.setFontSize(9);
-      doc.text(`${v.toFixed(1)}%`,px+2,py+11.5);
-    });
-    py+=20;
-  });
 
   showOverlay(false);
-  const fname=`Reporte_Granulometria_Argos_${new Date().toISOString().slice(0,10)}.pdf`;
+  const fname=`Informe_Granulometria_Argos_${new Date().toISOString().slice(0,10)}.pdf`;
   doc.save(fname);
-  showToast(`✅ Reporte generado: ${fname}`);
+  showToast(`✅ Informe generado: ${fname}`);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1817,4 +1997,5 @@ document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.targe
 </script>
 </body>
 </html>
+
 

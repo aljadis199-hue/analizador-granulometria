@@ -145,7 +145,10 @@ function extractMetadata(lines) {
       if (val !== null) meta.user = val;
     }
     if (line.includes('Hora de inicio') && meta.datetime === '') {
-      const val = valueBetween(line, 'Hora de inicio', null);
+      // Try progressively looser right-boundaries for different Malvern layouts
+      let val = valueBetween(line, 'Hora de inicio', 'Estado');
+      if (!val) val = valueBetween(line, 'Hora de inicio', 'ID de');
+      if (!val) val = valueBetween(line, 'Hora de inicio', null);
       if (val !== null) meta.datetime = val;
     }
 
@@ -156,9 +159,9 @@ function extractMetadata(lines) {
     }
 
     // --- Obscuration ---
-    if (line.includes('Obscuración promedio') && isNaN(meta.obscuration)) {
-      // e.g. "Obscuración promedio 14.61 %"
-      const m = line.match(/Obscuración promedio\s+([\d]+(?:[.,][\d]+)?)\s*%/);
+    if ((line.includes('Obscuración promedio') || line.includes('Obscuraci')) && isNaN(meta.obscuration)) {
+      // Flexible: handles accent variants (ó/o) and different capitalisation
+      const m = line.match(/Obscuraci[oó]n promedio\s+([\d]+(?:[.,][\d]+)?)\s*%/i);
       if (m) meta.obscuration = parseFloat(m[1].replace(',', '.'));
     }
   }
@@ -241,8 +244,9 @@ function extractTableData(lines) {
 function detectFormat(lines) {
   for (const line of lines) {
     if (line.includes('CILAS') || line.includes('Valores acumulados característicos')) return 'cilas';
-    // Anton Paar must be checked before Malvern: its table header also contains "Tamaño inferior"
     if (line.includes('Anton Paar') || line.includes('PSA 1090')) return 'antonpaar';
+    // English Malvern (v3.81 Analysis report) — must check before generic Malvern
+    if (line.includes('Operator Name') || line.includes('Laser Obscuration') || line.includes('% Volume In')) return 'malvern_en';
     if (line.includes('Mastersizer') || line.includes('Tamaño inferior') ||
         line.includes('Distribución de tamaño de partícula por volumen')) return 'malvern';
   }
@@ -322,6 +326,97 @@ function extractAntonPaarTableData(lines) {
   const byX = (a, b) => a.x - b.x;
   Q3.sort(byX); q3.sort(byX);
   return { Q3, q3 };
+}
+
+// ---------------------------------------------------------------------------
+// extractMalvernEnglishMetadata  (v3.81 Analysis report — English fields)
+// ---------------------------------------------------------------------------
+function extractMalvernEnglishMetadata(lines) {
+  const meta = { measurementName:'', user:'', datetime:'', comment:'', obscuration:NaN };
+  function vb(text, a, b) {
+    const ia = text.indexOf(a); if (ia === -1) return null;
+    const s = ia + a.length, ib = b ? text.indexOf(b, s) : -1;
+    const raw = (ib === -1 ? text.slice(s) : text.slice(s, ib)).trim();
+    return raw === '' ? null : raw;
+  }
+  for (const line of lines) {
+    if (line.includes('Sample Name') && !meta.measurementName) {
+      let v = vb(line, 'Sample Name', 'Measurement Date Time');
+      if (!v) v = vb(line, 'Sample Name', 'SOP File Name');
+      if (!v) v = vb(line, 'Sample Name', null);
+      if (v) meta.measurementName = v;
+    }
+    if (line.includes('Operator Name') && !meta.user) {
+      let v = vb(line, 'Operator Name', 'Analysis Date Time');
+      if (!v) v = vb(line, 'Operator Name', null);
+      if (v) meta.user = v;
+    }
+    if (!meta.datetime) {
+      if (line.includes('Measurement Date Time')) { const v = vb(line, 'Measurement Date Time', null); if (v) meta.datetime = v; }
+      else if (line.includes('Analysis Date Time')) { const v = vb(line, 'Analysis Date Time', null); if (v) meta.datetime = v; }
+    }
+    if (isNaN(meta.obscuration) && line.includes('Laser Obscuration')) {
+      const mx = line.match(/Laser Obscuration\s+([\d.]+)\s*%/i);
+      if (mx) meta.obscuration = parseFloat(mx[1]);
+    }
+  }
+  return meta;
+}
+
+// ---------------------------------------------------------------------------
+// extractMalvernEnglishTableData  (% Volume In → q3; Q3 from authoritative anchors)
+// ---------------------------------------------------------------------------
+function extractMalvernEnglishTableData(lines) {
+  const q3pts = [];
+  let d10 = null, d50 = null, d90 = null, vBelow3 = null, vRange3_30 = null;
+  let inTable = false;
+
+  for (const line of lines) {
+    let mx;
+    if ((mx = line.match(/Dv\s*\(10\)\s+([\d.]+)\s*[µμ]m/i))) d10 = parseFloat(mx[1]);
+    if ((mx = line.match(/Dv\s*\(50\)\s+([\d.]+)\s*[µμ]m/i))) d50 = parseFloat(mx[1]);
+    if ((mx = line.match(/Dv\s*\(90\)\s+([\d.]+)\s*[µμ]m/i))) d90 = parseFloat(mx[1]);
+    if ((mx = line.match(/Volume Below \(3\)\s*[µμ]m\s+([\d.]+)\s*%/i))) vBelow3 = parseFloat(mx[1]);
+    if ((mx = line.match(/Volume In Range \(3[, ]*30\)\s*[µμ]m\s+([\d.]+)\s*%/i))) vRange3_30 = parseFloat(mx[1]);
+
+    if (line.includes('% Volume In')) { inTable = true; continue; }
+    if (!inTable) continue;
+    if (q3pts.length > 2 && /[a-zA-Z]/.test(line)) break;
+    const nums = line.match(/\d+(?:\.\d+)?/g)?.map(Number);
+    if (!nums || nums.length < 2) continue;
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = nums[i], y = nums[i + 1];
+      if (x > 0 && x < 2000 && y >= 0 && y < 100) q3pts.push({ x, y });
+    }
+  }
+  q3pts.sort((a, b) => a.x - b.x);
+
+  // Build Q3 via piecewise rescaling between authoritative anchors
+  const anchors = [];
+  if (d10)  anchors.push({ x: d10 * 0.05, y: 0 }); else anchors.push({ x: 0.05, y: 0 });
+  if (d10)  anchors.push({ x: d10, y: 10 });
+  if (vBelow3 !== null) anchors.push({ x: 3.0, y: vBelow3 });
+  if (d50)  anchors.push({ x: d50, y: 50 });
+  if (vBelow3 !== null && vRange3_30 !== null) anchors.push({ x: 30.0, y: vBelow3 + vRange3_30 });
+  if (d90)  anchors.push({ x: d90, y: 90 });
+  anchors.push({ x: d90 ? d90 * 5 : 1000, y: 100 });
+
+  const Q3 = anchors.map(a => ({ ...a }));
+
+  for (let ai = 0; ai < anchors.length - 1; ai++) {
+    const { x: x1, y: y1 } = anchors[ai], { x: x2, y: y2 } = anchors[ai + 1];
+    const binsHere = q3pts.filter(p => p.x > x1 && p.x < x2);
+    if (!binsHere.length) continue;
+    let cum = 0;
+    const cumBins = binsHere.map(p => { cum += p.y; return { x: p.x, c: cum }; });
+    const total = cum; if (total <= 0) continue;
+    const dY = y2 - y1;
+    for (const { x, c } of cumBins) Q3.push({ x, y: y1 + c / total * dY });
+  }
+
+  Q3.sort((a, b) => a.x - b.x);
+  const Q3f = Q3.filter((p, i) => i === 0 || Math.abs(p.x - Q3[i - 1].x) > 0.001);
+  return { Q3: Q3f, q3: q3pts };
 }
 
 // ---------------------------------------------------------------------------
@@ -455,11 +550,13 @@ async function parsePDF(file) {
     const fmt = detectFormat(seg);
     // Skip CILAS simplified-table pages (only "Valores acumulados definidos por el usuario")
     if (fmt === 'cilas' && !seg.some(l => l.includes('Valores acumulados característicos'))) continue;
-    const meta = fmt === 'cilas'      ? extractCilasMetadata(seg)
-               : fmt === 'antonpaar' ? extractAntonPaarMetadata(seg)
+    const meta = fmt === 'cilas'       ? extractCilasMetadata(seg)
+               : fmt === 'antonpaar'  ? extractAntonPaarMetadata(seg)
+               : fmt === 'malvern_en' ? extractMalvernEnglishMetadata(seg)
                : extractMetadata(seg);
-    const { Q3, q3 } = fmt === 'cilas'      ? extractCilasTableData(seg)
-                     : fmt === 'antonpaar' ? extractAntonPaarTableData(seg)
+    const { Q3, q3 } = fmt === 'cilas'       ? extractCilasTableData(seg)
+                     : fmt === 'antonpaar'  ? extractAntonPaarTableData(seg)
+                     : fmt === 'malvern_en' ? extractMalvernEnglishTableData(seg)
                      : extractTableData(seg);
     if (Q3.length === 0 && q3.length === 0) continue;
     results.push({
@@ -482,11 +579,12 @@ async function parsePDF(file) {
 // ---------------------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { parsePDF, detectFormat, groupIntoLines,
-    extractMetadata, extractCilasMetadata, extractAntonPaarMetadata,
-    extractTableData, extractCilasTableData, extractAntonPaarTableData, extractPairs };
+    extractMetadata, extractCilasMetadata, extractAntonPaarMetadata, extractMalvernEnglishMetadata,
+    extractTableData, extractCilasTableData, extractAntonPaarTableData, extractMalvernEnglishTableData, extractPairs };
 } else if (typeof window !== 'undefined') {
   window.granulometryParser = { parsePDF, detectFormat, groupIntoLines,
-    extractMetadata, extractCilasMetadata, extractAntonPaarMetadata,
-    extractTableData, extractCilasTableData, extractAntonPaarTableData, extractPairs };
+    extractMetadata, extractCilasMetadata, extractAntonPaarMetadata, extractMalvernEnglishMetadata,
+    extractTableData, extractCilasTableData, extractAntonPaarTableData, extractMalvernEnglishTableData, extractPairs };
 }
+
 

@@ -219,7 +219,9 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);height:100vh;display:f
   <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" style="display:none">
   <input type="file" id="fileInput" multiple accept=".pdf" style="display:none">
   <input type="file" id="basePdfInput" accept=".pdf" style="display:none">
-  <button class="lbtn lbtn-primary" onclick="document.getElementById('folderInput').click()">📂 Abrir carpeta</button>
+  <button class="lbtn lbtn-primary" onclick="openFolderDialog()">📂 Abrir carpeta</button>
+  <button class="lbtn" id="reloadBtn" style="background:var(--teal);color:#fff;display:none" onclick="manualReload()" title="Recargar carpeta manteniendo selecciones">🔄 Recargar</button>
+  <span id="refresh-timer" style="font-size:10px;color:var(--muted);display:none;font-family:'Barlow',sans-serif;align-self:center"></span>
   <button class="lbtn lbtn-sec"     onclick="document.getElementById('fileInput').click()">📄 Seleccionar PDFs</button>
   <button class="lbtn" style="background:#F59E0B;color:#fff" onclick="document.getElementById('basePdfInput').click()" title="Cargar un PDF externo como curva de referencia base">★ PDF Base</button>
   <span id="pdf-count-badge"></span>
@@ -2110,6 +2112,122 @@ function exportCSV() {
 }
 
 // ────────────────────────────────────────────────────────────
+// AUTO-RECARGA DE CARPETA
+// ────────────────────────────────────────────────────────────
+let _dirHandle=null;       // FileSystemDirectoryHandle (API moderna)
+let _lastFiles=null;       // Fallback: array de File
+let _autoTimer=null;       // setInterval auto-recarga
+let _countTimer=null;      // setInterval contador
+let _nextRefresh=null;     // Date del próximo refresco
+const REFRESH_MS=30*60*1000; // 30 minutos
+
+async function openFolderDialog(){
+  // Intenta FileSystemDirectoryHandle para poder detectar archivos nuevos
+  if(window.showDirectoryPicker){
+    try{
+      _dirHandle=await window.showDirectoryPicker({mode:'read'});
+      _lastFiles=null;
+      const files=[];
+      for await(const e of _dirHandle.values())
+        if(e.kind==='file'&&e.name.toLowerCase().endsWith('.pdf'))
+          files.push(await e.getFile());
+      if(files.length){ await loadFiles(files); startAutoRefresh(); }
+      return;
+    }catch(e){
+      if(e.name==='AbortError') return; // usuario canceló
+      // No disponible → fallback
+    }
+  }
+  document.getElementById('folderInput').click();
+}
+
+function startAutoRefresh(){
+  if(_autoTimer) clearInterval(_autoTimer);
+  if(_countTimer) clearInterval(_countTimer);
+  _nextRefresh=new Date(Date.now()+REFRESH_MS);
+  _autoTimer=setInterval(()=>{
+    reloadFolderKeepSelection(false);
+    _nextRefresh=new Date(Date.now()+REFRESH_MS);
+  },REFRESH_MS);
+  _countTimer=setInterval(updateRefreshTimer,60000);
+  updateRefreshTimer();
+  document.getElementById('reloadBtn').style.display='';
+  document.getElementById('refresh-timer').style.display='';
+}
+
+function updateRefreshTimer(){
+  const el=document.getElementById('refresh-timer');
+  if(!el||!_nextRefresh) return;
+  const mins=Math.max(0,Math.round((_nextRefresh-Date.now())/60000));
+  el.textContent=`Recarga en ${mins} min`;
+}
+
+async function manualReload(){
+  await reloadFolderKeepSelection(true);
+  _nextRefresh=new Date(Date.now()+REFRESH_MS);
+  updateRefreshTimer();
+}
+
+async function reloadFolderKeepSelection(showNotif=true){
+  if(!_dirHandle&&!_lastFiles) return;
+
+  // Guardar estado de selecciones por clave única
+  const key=m=>`${m.filename}||${m.datetime}`;
+  const selKeys=new Set([...selectedSet].map(i=>key(measurements[i])));
+  const baseKey=baseIndex!==null?key(measurements[baseIndex]):null;
+
+  showOverlay(true); setLoadingMsg('Actualizando carpeta…','Manteniendo selecciones');
+
+  let pdfs=[];
+  try{
+    if(_dirHandle){
+      const files=[];
+      for await(const e of _dirHandle.values())
+        if(e.kind==='file'&&e.name.toLowerCase().endsWith('.pdf'))
+          files.push(await e.getFile());
+      pdfs=files;
+    } else {
+      pdfs=Array.from(_lastFiles).filter(f=>f.name.toLowerCase().endsWith('.pdf'));
+    }
+  }catch(err){
+    showOverlay(false); showToast('⚠ Error al leer la carpeta.');
+    console.warn('Reload error:',err); return;
+  }
+  if(!pdfs.length){showOverlay(false);return;}
+
+  const newM=[]; let ok=0,fail=0,totalM=0;
+  for(let i=0;i<pdfs.length;i++){
+    setLoadingMsg(`Actualizando ${i+1} / ${pdfs.length}`,pdfs[i].name);
+    try{
+      const res=await parsePDF(pdfs[i]);
+      if(res.length>0){for(const m of res) newM.push(m); ok++; totalM+=res.length;}
+      else fail++;
+    }catch(e){console.warn('Error al parsear',pdfs[i].name,e);fail++;}
+  }
+
+  newM.sort((a,b)=>parseDT(a.datetime)-parseDT(b.datetime));
+  measurements=newM;
+
+  // Restaurar selecciones
+  selectedSet.clear();
+  newM.forEach((m,i)=>{if(selKeys.has(key(m))) selectedSet.add(i);});
+
+  // Restaurar base interna por clave (filename+datetime)
+  baseIndex=null;
+  if(baseKey){const bi=newM.findIndex(m=>key(m)===baseKey);if(bi>=0)baseIndex=bi;}
+  // baseMeasurementExternal (★ PDF Base externo) NO se toca — siempre prevalece
+
+  showOverlay(false);
+  updateMeasurementList();
+  const mLabel=totalM!==ok?` · ${totalM} mediciones`:'';
+  document.getElementById('pdf-count-badge').textContent=`${ok} PDF${ok!==1?'s':''}`;
+  document.getElementById('pdf-count-badge').style.display='';
+  setStatus(`Actualizado: ${ok} PDF${ok!==1?'s':''}${mLabel}${fail?` · ${fail} con error`:''}`);
+  if(showNotif) showToast(`✅ Carpeta actualizada: ${ok} PDF${ok!==1?'s':''}${mLabel}`);
+  redrawCurrentChart();
+}
+
+// ────────────────────────────────────────────────────────────
 // CARGA DE ARCHIVOS
 // ────────────────────────────────────────────────────────────
 async function loadFiles(fileList) {
@@ -2137,6 +2255,8 @@ async function loadFiles(fileList) {
   setStatus(`${ok} PDF${ok!==1?'s':''} cargado${ok!==1?'s':''} correctamente${mLabel}${fail?` · ${fail} con error`:''}`);
   showToast(`✅ ${ok} archivo${ok!==1?'s':''} cargado${ok!==1?'s':''} exitosamente${mLabel}${fail?` (${fail} con error)`:''}`);
   clearChartArea();
+  // La auto-recarga solo se activa si se llamó desde la apertura de carpeta
+  // (ver event listeners y openFolderDialog)
 }
 
 // ────────────────────────────────────────────────────────────
@@ -2240,8 +2360,19 @@ function doHistorico() {
 // ────────────────────────────────────────────────────────────
 // INIT & EVENTOS
 // ────────────────────────────────────────────────────────────
-document.getElementById('folderInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
-document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files.length)loadFiles(e.target.files);e.target.value='';});
+// Carpeta → activa auto-recarga y guarda referencia
+document.getElementById('folderInput').addEventListener('change',e=>{
+  if(e.target.files.length){
+    _dirHandle=null; _lastFiles=e.target.files;
+    loadFiles(e.target.files).then(()=>startAutoRefresh());
+  }
+  e.target.value='';
+});
+// PDFs individuales → NO activan auto-recarga
+document.getElementById('fileInput').addEventListener('change',e=>{
+  if(e.target.files.length) loadFiles(e.target.files);
+  e.target.value='';
+});
 document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.target.files[0])loadBasePdf(e.target.files[0]);e.target.value='';});
 
 // Fecha en header
@@ -2274,6 +2405,7 @@ document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.targe
 </script>
 </body>
 </html>
+
 
 
 

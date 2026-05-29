@@ -504,6 +504,20 @@ function extractCilasTableData(lines) {
 }
 
 // ---------------------------------------------------------------------------
+// fixPdfGlyphEncoding
+// Removes the &X-per-character encoding artifact from certain PDF fonts.
+// e.g. "&C&o&m&e&n&t" → "Comment"
+// ---------------------------------------------------------------------------
+function fixPdfGlyphEncoding(str) {
+  if (!str || str.length < 3) return str;
+  const ampCount = (str.match(/&/g) || []).length;
+  if (ampCount > str.length * 0.4) {
+    return str.replace(/&(.)/g, '$1');
+  }
+  return str;
+}
+
+// ---------------------------------------------------------------------------
 // parsePDF  (main entry point — supports Malvern Mastersizer and CILAS 990)
 // ---------------------------------------------------------------------------
 async function parsePDF(file) {
@@ -527,7 +541,7 @@ async function parsePDF(file) {
     for (const item of textContent.items) {
       const absoluteY = cumulativeHeight + (viewport.height - item.transform[5]);
       if (item.str && item.str.trim() !== '') {
-        allItems.push({ str: item.str, x: item.transform[4], y: absoluteY });
+        allItems.push({ str: fixPdfGlyphEncoding(item.str), x: item.transform[4], y: absoluteY });
       }
     }
     cumulativeHeight += viewport.height;
@@ -586,5 +600,6 @@ if (typeof module !== 'undefined' && module.exports) {
     extractMetadata, extractCilasMetadata, extractAntonPaarMetadata, extractMalvernEnglishMetadata,
     extractTableData, extractCilasTableData, extractAntonPaarTableData, extractMalvernEnglishTableData, extractPairs };
 }
+
 
 

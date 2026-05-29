@@ -866,6 +866,18 @@ async function extractMalvernChartCurve(page, _vp, rawItems){
   }catch(e){console.warn('[Malvern canvas]',e);return null;}
 }
 
+// Corrige artefacto de codificación de fuentes PDF donde cada carácter
+// viene prefijado con '&' (p.ej. "&C&o&m" en vez de "Com").
+// Detectado cuando >40% de los caracteres son '&'.
+function fixPdfGlyphEncoding(str) {
+  if(!str||str.length<3) return str;
+  const ampCount=(str.match(/&/g)||[]).length;
+  if(ampCount>str.length*0.4){
+    return str.replace(/&(.)/g,'$1');
+  }
+  return str;
+}
+
 async function parsePDF(file) {
   const ab=await file.arrayBuffer();
   const pdfDoc=await pdfjsLib.getDocument({data:ab}).promise;
@@ -879,8 +891,9 @@ async function parsePDF(file) {
     for(const item of tc.items){
       const absY=cumH+(vp.height-item.transform[5]);
       if(item.str&&item.str.trim()){
-        allItems.push({str:item.str,x:item.transform[4],y:absY});
-        rawItems.push({str:item.str.trim(),pdfX:item.transform[4],pdfY:item.transform[5]});
+        const clean=fixPdfGlyphEncoding(item.str);
+        allItems.push({str:clean,x:item.transform[4],y:absY});
+        rawItems.push({str:clean.trim(),pdfX:item.transform[4],pdfY:item.transform[5]});
       }
     }
     pageStore.push({page,vp,rawItems});
@@ -2405,6 +2418,7 @@ document.getElementById('basePdfInput').addEventListener('change',e=>{if(e.targe
 </script>
 </body>
 </html>
+
 
 
 

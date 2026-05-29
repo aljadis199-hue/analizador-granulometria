@@ -587,3 +587,4 @@ if (typeof module !== 'undefined' && module.exports) {
     extractTableData, extractCilasTableData, extractAntonPaarTableData, extractMalvernEnglishTableData, extractPairs };
 }
 
+
